@@ -1,0 +1,128 @@
+这个错误主要影响性能，对可读性或有效性没有影响。算术运算通常以代数形式实现。这种默认方法在许多情况下是合理的，我们无需担心它对性能的影响。然而，在其他情况下，我们可以从阻止临时对象的创建和销毁中受益。算术表达式是一个非直观形式可以最小化临时对象并提高执行速度的领域。
+
+\mySamllsection{问题}
+
+考虑一下此代码，其中创建了一些 Complex 对象，然后将它们相加以初始化另一个对象。这种方法是使用类对象创建算术表达式的常见且直观的方法。代码中有五个构造函数调用：三个用于前三个对象，即c1、c2 和 c3，这些对象无法最小化，两个是在求和表达式中创建的临时对象。消除这些临时对象将提高性能。许多现代编译器都会尝试消除它们，但理解这个问题仍然是值得的。
+
+\filename{清单9.22 在表达式求值中具有过多临时项的类}
+
+\begin{cpp}
+class Complex {
+private:
+  double real;
+  double imag;
+public:
+  Complex(double real=0, double imag=0) : real(real), imag(imag) {}
+  double getReal() const { return real; }
+  double getImag() const { return imag; }
+};
+const Complex operator+(const Complex& lhs, const Complex& rhs) {
+  return Complex(lhs.getReal()+rhs.getReal(), lhs.getImag()+rhs.getImag());
+}
+
+int main() {
+  Complex c1(2, 2); // 1
+  Complex c2(0, -1);
+  Complex c3(-2.2, 4.2);
+  Complex c4 = c1 + c2 + c3; // 2
+}
+\end{cpp}
+
+{\footnotesize
+注释1：创建每个对象都需要调用一次构造函数
+
+注释2：评估需要两个临时对象
+}
+
+\mySamllsection{分析}
+
+前三个构造函数调用必不可少；它们必须存在才能创建 Complex 对象。我们无法在没有构造函数调用的情况下神奇地获得对象；但是，求和会创建两个临时对象。从性能角度考虑，只要创建了临时对象，就有可能消除它的创建。请记住，每个非平凡数据类型的构造函数在某个时候都有一个关联的析构函数调用，这会使使用临时对象的成本加倍。大多数编译器可以优化简单对象的析构函数调用。
+
+第一个临时变量保存 c1 和 c2 的总和，第二个临时变量保存第一个临时变量和 c3 的总和的结果。然后，调用默认的 operator= 来使用第二个临时变量中保存的值初始化 c4 对象。问题是我们是否可以减少构造函数调用的次数，同时仍提供相同的功能。
+
+\mySamllsection{解决}
+
+可以通过直接使用复合赋值运算符或与独立 operator+ 结合使用来减少临时变量的数量。如果同时提供独立版本和复合版本，则应根据复合赋值形式实现独立版本。此外，消除了代码重复的可能性，将基本函数单独封装在复合赋值版本中。独立版本调用此函数但不提供基本逻辑。以下代码通过根据复合赋值版本定义独立操作并在计算中继续使用独立运算符形式展示了这些改进。
+
+\filename{清单9.23 在表达式求值中具有最小化临时的类}
+
+\begin{cpp}
+class Complex {
+private:
+  double real;
+  double imag;
+public:
+  Complex(double real=0, double imag=0) : real(real), imag(imag) {}
+  Complex& operator+=(const Complex&);
+  double getReal() const { return real; }
+  double getImag() const { return imag; }
+};
+Complex& Complex::operator+=(const Complex& o) { // 1
+  real += o.real;
+  imag += o.imag;
+  return *this;
+}
+const Complex operator+(const Complex& lhs, const Complex& rhs) { // 2
+  return Complex(lhs) += rhs;
+}
+int main() {
+  Complex c1(2, 2);
+  Complex c2(0, -1);
+  Complex c3(-2.2, 4.2);
+  Complex c4 = c1 + c2 + c3;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：运算符逻辑包含在复合赋值版本中
+
+注释2：独立运算符按照复合赋值版本实现
+}
+
+当独立运算符以复合赋值版本实现时，就不再需要临时对象了。清单9.23 中的实现进行了三次构造函数调用，这些调用是构造 c1、c2 和c3 对象所必需的。求和运算符的求值不会导致创建任何临时对象，从而提高了性能，同时又不损害表达式求值的有效性。
+
+清单 9.24 中的代码展示了实现运算符调用序列的另一种方法。独立版本单独会为每次对象调用创建一个临时对象，而此形式会就地更新对象，而不会创建临时对象。Complex 类的定义与清单 9.23 中的相同，只是 main 函数已更改。
+
+\filename{清单9.24 多操作符调用的另一种形式}
+
+\begin{cpp}
+int main() {
+  Complex c1(2, 2);
+  Complex c2(0, -1);
+  Complex c3(-2.2, 4.2);
+  Complex c4(c1); // 1
+  c4 += c2; // 2
+  c4 += c3;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：调用复制构造函数
+
+注释2：不需要临时变量的顺序求和
+}
+
+这种方法的优势在于复合赋值形式效率更高，因为它们会就地更新值。之前的独立版本表明它必须返回一个新对象，并且这个新对象需要通过构造函数调用创建一个临时对象。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+为了防止创建临时对象，请考虑实现算术运算符的复合赋值版本并从独立版本调用这些版本。
+
+\item
+可以有效地按顺序多次使用该运算符，而不会创建临时对象。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+

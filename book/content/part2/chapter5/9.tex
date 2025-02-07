@@ -1,0 +1,124 @@
+这个错误与正确性有关。使用 exit 函数可能会导致有限或动态资源泄漏，从而影响系统的稳定性。
+
+\mySamllsection{问题}
+
+假设我们的开发人员需要遵循一些可疑的要求。如果发现有员工被解雇，程序必须在工资单处理期间立即崩溃。开发人员理解这一要求，并记得以前的 C 程序会立即使用 exit 调用来终止；因此，开发人员决定在 C++ 程序中使用此技术。后来，在出现一些奇怪的问题后，系统程序员问开发人员为什么这个程序会导致系统稳定性问题。
+
+\filename{清单5.20 使用exit结束程序}
+
+\begin{cpp}
+class Connection {
+private:
+  int conn;
+public:
+  Connection(const std::string& name) : conn(0) {
+    conn = 1; // assume: database connection resource is returned
+  }
+  ~Connection() {
+    if (conn)
+      conn = 0; // assume: destroys database connection resource
+    std::cerr << "Connection destroyed\n";
+  }
+};
+
+struct Employee {
+  bool isTerminated() { return true; }
+  double computePay() { return 42.0; }
+};
+
+int main() {
+  Connection c("payroll");
+  Employee emp;
+  if (emp.isTerminated())
+    exit(-1); // 1
+  std::cout << emp.computePay() << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：程序必须在此时终止
+}
+
+\mySamllsection{分析}
+
+程序分配数据库连接、处理员工，并在发现被解雇的人员时崩溃。清理数据库后重新运行程序，可能又崩溃了几次。处理结束时，数据库清理干净，程序运行完成，每个人都拿到了工资——快乐的一天！但为什么会出现系统稳定性问题？问题出在 Connection 类。它的构造函数访问了有限的资源，而析构函数就是为了释放这些资源而设计的。在正常情况下，此代码可以正常工作。但通常，问题会在特殊情况下出现。exit 调用强制程序立即终止。Connection 对象将不会被清理，因为它们的析构函数无法运行。
+
+动态资源已分配，但没有任何东西使用它——典型的资源泄漏。
+
+\mySamllsection{解决}
+
+解决这个问题需要两个步骤。首先，不要使用 exit 调用；而是抛出异常。其次，将最外层的代码包装在一个通用的 try/catch 块中，其异常操作是重新抛出异常。当然，catch 子句可以更具体，但在解决这个问题时，代码的智能是有限的。
+
+这种方法可以防止资源泄漏，因为析构函数有机会运行。当Connection 对象超出范围时，其析构函数会将数据库连接返回到池中，从而防止分配但未使用的资源。
+
+不可否认，代码很笨拙，但在许多情况下，开发人员发现自己需要改进整体结构或实现。在这些情况下，“廉价”解决方案是必要的，即使设计很差。开发人员很少能负担得起改进旧代码所需的时间和预算——这是一个在他们可以适应的时间和地点并在有限的领域寻求改进的问题。现实有时很残酷。
+
+\filename{清单5.21 使用异常终止程序}
+
+\begin{cpp}
+class Connection {
+private:
+  int conn;
+public:
+  Connection(const std::string& name) : conn(0) {
+    conn = 1; // assume: database connection resource is allocated
+  }
+  ~Connection() {
+    if (conn)
+      conn = 0; // assume: returns database connection to pool
+    std::cerr << "Connection destroyed\n";
+  }
+};
+
+struct Employee {
+  bool isTerminated() { return true; }
+  double computePay() { return 42.0; }
+};
+
+struct TerminatedEmployee {
+  std::string message;
+  TerminatedEmployee(const std::string& msg) : message(msg) {}
+};
+
+int main() {
+  try {
+    Connection c("payroll");
+    Employee emp;
+    if (emp.isTerminated())
+    throw TerminatedEmployee("Employee was terminated");
+    std::cout << emp.computePay() << '\n';
+  } catch (...) {
+    throw; // 1
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：此时终止程序
+}
+
+在某些情况下，提前退出程序是必要的。当需要时，请确保对 exit 进行编码，以便在退出之前调用所有析构函数。只有在不需要堆栈展开（调试）的情况下，程序才应该 exit 而不清理资源。在这种情况下，请注意不要泄漏系统资源，例如套接字、数据库连接和类似的有限实体。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+避免使用 exit 调用。
+
+\item
+抛出异常，一般性地（或具体地）捕获它，然后重新抛出，以便让析构函数有机会运行。
+
+\item
+尽你所能地改进；你很可能不会得到重大的机会来改进大量 的代码。
+\end{itemize}
+
+
+
+
+
+
+
+
+

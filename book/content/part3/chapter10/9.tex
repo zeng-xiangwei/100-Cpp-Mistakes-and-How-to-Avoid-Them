@@ -1,0 +1,131 @@
+这个错误关注的是正确性、有效性和性能。异常可以由指针、值或引用抛出，并由同一类型捕获。但是，每种方法的优缺点各不相同。
+
+异常为处理错误提供了另一种控制结构。正确实施后，它们的使用可以实现弹性代码，并允许开发人员从可能终止程序的错误中恢复。异常比函数更昂贵，并且其行为不太直观。了解其中一些问题对于正确使用至关重要。
+
+\mySamllsection{问题}
+
+我们可以想象，我们的开发人员已经了解了抛出和捕获异常的各种方法，但需要明确最佳方法。他们进行一些实验来测试多种组合并了解其中的差异。
+
+开发人员正确地理解了抛出异常意味着将一些数据从抛出位置移动到捕获位置。他们的直觉认为移动最少数据的解决方案是最佳的。因此，尝试通过指针抛出异常。开发人员对这种方法不满意，决定尝试各种通过指针抛出异常的方法，并将它们与通过值抛出进行比较。
+
+清单 10.17 中的代码显示了三次这样的尝试。第一次是抛出指向本地对象的指针；第二次是抛出指向基于堆的对象的指针；为了进行比较，第三次是按值抛出。开发人员对 DerivedException 构造函数及其复制构造函数进行了检测，以计算每个构造函数被调用的次数（未显示检测代码）。
+
+\filename{清单10.17 通过指针和值捕获异常}
+
+\begin{cpp}
+struct DerivedException : public std::exception {
+  std::string message;
+  DerivedException() : message("DerivedException") {}
+  ~DerivedException() throw() {}
+  const char* what() const throw() { return message.c_str(); } // 1
+};
+
+void throw_by_local_pointer() {
+  DerivedException de;
+  throw &de;
+}
+
+void throw_by_heap_pointer() {
+  DerivedException* de = new DerivedException();
+  throw de;
+}
+
+void throw_by_value() {
+  DerivedException de;
+  throw de;
+}
+
+int main() {
+  try {
+    throw_by_local_pointer();
+  } catch(std::exception* ex) {
+    std::cout << ex->what() << '\n';
+  }
+  try {
+    throw_by_heap_pointer();
+  } catch(std::exception* ex) {
+    std::cout << ex->what() << '\n';
+  }
+  try {
+    throw_by_value();
+  } catch(std::exception ex) {
+    std::cout << ex.what() << '\n';
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：重写 std::exception 虚方法
+}
+
+开发人员运行代码并注意到每个方法都调用了一次构造函数，并且从未调用过复制构造函数。从这些结果可以得出结论，实现抛出异常和捕获异常之间没有区别。
+
+\mySamllsection{分析}
+
+我们可以赞扬开发人员的科学方法，但我们可能怀疑他们的结论中遗漏了一些重要的东西。必须强调的一点是，当抛出一个对象（或指针）时，该对象将在抛出时超出范围。因此，C++ 要求复制抛出的任何内容，并将临时对象（或指针）转移到捕获站点。因此，无论选择哪种方法抛出，都会进行复制，从而增加抛出的成本。
+
+throw\_by\_local\_pointer 应该会引起任何人的抗议。本地对象在函数内创建，并抛出其地址。这种方法最大限度地减少了从抛出到捕获站点传输的数据量，因为它只复制指针的大小；然而，当抛出完成时，函数已经退出，破坏局部变量。catch 子句接收指针的副本，但该指针指向无效的DerivedException 对象。打印出 what 信息是未定义的行为。此解决方案很快，但非常错误。
+
+throw\_by\_heap\_pointer 的执行速度与上一次尝试一样快，但解决了无效异常对象的问题。但有一个不太明显的问题：谁删除了堆分配的对象？如果捕获站点是最后一个使用该对象的地方，则此块中的代码删除该对象应该没问题。但是，由于无法恢复此代码，因此可能会再次抛出异常。那么，谁删除该对象？这种方法提出了一个关于对象删除责任的难以回答或无法回答的问题。
+
+最后，分析按值抛出，开发人员发现构造函数调用次数没有差异，错误地认为唯一的成本是指针大小和异常对象大小之间的差异。发生了 两个模糊的问题；开发人员忽略了第一个问题，而第二个问题则是看不见的。
+
+对于按值捕获的异常，what 方法的输出不正确。它输出来自std::exception 类的消息（输出是 std::exception，再聪明不过了！）——DerivedException 的多态 what 方法未执行。原因是抛出的异常的副本用于初始化 catch 参数。该参数的类型为std::exception，因此抛出的异常被切片，并且只复制了基类部分。
+重写的方法被切片，并执行基类版本。这是一个很容易发现的问题。
+
+难以发现的问题基于一个显而易见的问题——它们是一对。按值抛出的明显成本是一次复制，这是开发人员（错误地）确定的。由于异常是由其基类捕获的，因此调用的不是派生类复制构造函数，而是基类版本。开发人员无法检测 std::exception 复制构造函数，因为它是标准库代码；否则，他们会看到隐藏的副本。按值抛出时，会为临时对象进行复制，然后使用临时对象的副本初始化 catch 参数——两个副本。
+
+\mySamllsection{解决}
+
+最后，我们的开发人员通过值抛出，以防止出现指针删除问题。了解到通过值抛出会使副本数量翻倍，因此使用通过引用捕获来最小化成本。这种情况是少数几个（如果不是唯一）临时对象引用合法的地方之一（等待现代 C++）。在抛出站点创建的临时对象通过引用捕获参数进行传输；因此，不会进行第二次复制。
+
+此外，由于捕获了引用，因此它允许多态行为，并且调用了 DerviedException 版本的 what。以下代码显示需要进行简单的调整以最大限度地降低复制成本并保留重写的方法行为。添加 \& 符号，获得高分！
+
+\filename{清单10.18 通过引用捕获异常}
+
+\begin{cpp}
+struct DerivedException : public std::exception {
+  std::string message;
+  DerivedException() : message("DerivedException") {}
+  ~DerivedException() throw() {}
+  const char* what() const throw() { return message.c_str(); }
+};
+void throw_by_value_catch_by_reference() {
+  DerivedException de;
+  throw de; // 1
+}
+
+int main() {
+  try {
+    throw_by_value_catch_by_reference();
+  } catch(const std::exception& ex) { // 2
+    std::cout << ex.what() << '\n';
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：按值抛出，因为无论如何都必须进行复制
+
+注释2：按引用捕获，以防止复制并保持多态性
+}
+
+开发人员还学到了一个教训，即假设简单的仪器就足以描绘出程序行为的完整图像。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+通过值抛出异常可消除通过指针抛出的问题。
+
+\item
+通过引用捕获异常可最大程度地减少复制并确保多态行为。
+
+\item
+最小化派生异常类的大小可最大程度地减少复制成本。
+
+\item
+切勿返回指向本地对象的指针（或引用）。
+\end{itemize}

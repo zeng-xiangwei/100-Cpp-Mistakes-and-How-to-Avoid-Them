@@ -1,0 +1,139 @@
+此错误主要涉及正确性，而很少涉及性能。这是一个问题，主要是在类中使用动态资源时。无法处理自赋值可能会导致这些资源出现严重错误。
+
+从一个实例到另一个实例的赋值经常发生。复制赋值运算符用于处理 此功能。正确编写的复制赋值运算符必须正确处理动态资源，以防止违反类不变量、唯一对象和资源泄漏。但是，当赋值发生在同一个对象之间时，一个微妙的问题可能会让开发人员犯难。它似乎不太可能发生自赋值，但使用指针时，实际对象比命名变量更 模糊。如果自赋值处理不当，可能会丢失数据、发生崩溃或出现未定义的行为。
+
+\mySamllsection{问题}
+
+考虑清单 9.14 中的代码，它在从不同的 Auto 对象分配时创建一个新的 Engine 对象。处理动态资源的模式是正确的，但代码中隐藏着一个重大问题。假设删除现有的 Engine 是必要的（确实如此），因此代码在复制之前将其删除。由于分配源和目标相同，因此尝试获取 VIN 是对已删除数据的访问。希望代码崩溃时不会出现意外行为或数据损坏；否则，请做好噩梦的准备。使用 valgrind 和内存清理器等工具是一种非常好的做法，正如这个错误所证明的那样。
+
+\filename{清单9.14 带有隐患的对象赋值}
+
+\begin{cpp}
+class Engine {
+private:
+  std::string vin;
+public:
+  Engine(std::string vin) : vin(vin) {}
+  std::string getVin() { return vin; }
+};
+
+class Auto {
+private:
+  Engine* engine;
+public:
+  Auto(Engine* engine) : engine(engine) {}
+  Auto& operator=(const Auto& car) {
+    if (engine) // 1
+      delete engine;
+    engine = new Engine(car.engine->getVin()); // 2
+    return *this;
+  }
+};
+
+int main() {
+  Engine* e1 = new Engine("123456789");
+  Auto mustang(e1);
+  mustang = mustang;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：删除现有引擎
+
+注释2：访问已删除的引擎数据
+}
+
+\mySamllsection{分析}
+
+这种资源处理在某些情况下可能是正确的，但使用复制赋值运算符时，就会出现错误。赋值代码首先删除现有的 Engine 对象。然后，它从源提供的 VIN 分配一个新的 Engine 对象。虽然看起来不错，但删除是一个大问题。
+
+删除 Engine 对象可确保删除现有的 Engine 以防止资源泄漏。从参数的 VIN 值分配新的 Engine 旨在仅从该数据创建新的 Engine；但是，数据来自刚刚删除的对象。在许多赋值情况下，这两个对象不会相同，因此此代码可以正常工作。但在这种情况下，源和目标是同一个对象。这种情况是自我赋值，现在代码会导致问题。因此，运行良好的代码现在崩溃（好日子）或执行一些未定义的行为（非常糟糕的一天）。
+
+我的系统很幸运——尝试访问已删除的发动机 VIN 时会收到有关重复释放或损坏的错误消息。此错误表明出了什么严重问题，我必须弄清楚（我感到惭愧）。也许其他系统不会显示错误。祸啊！
+
+\mySamllsection{解决}
+
+问题是，当对象和参数是同一个实体时，删除 Engine 对象会导致问题。在其他情况下（它们不是同一个对象），则不存在问题。需要的是检查接收对象和参数对象是否相同的代码。在这种情况下，不应发生删除。在这种情况下不应该发生任何事情。
+
+以下清单中的代码展示了一种更好的方法，可以处理自赋值并防止对这些动态资源进行不当处理。通过简单的测试确定源和目标是否是同一对象可以防止不当行为。
+
+\filename{清单9.15 在拷贝赋值操作符中处理自赋值}
+
+\begin{cpp}
+class Engine {
+private:
+  std::string vin;
+public:
+  Engine(std::string vin) : vin(vin) {}
+  std::string getVin() { return vin; }
+};
+
+class Auto {
+private:
+  Engine* engine;
+public:
+  Auto(Engine* engine) : engine(engine) {}
+  Auto& operator=(const Auto& car) {
+    if (this == &car) // 1
+      return *this;
+    if (engine) {
+      delete engine; // 2
+      engine = 0; // 3
+    }
+    engine = new Engine(car.engine->getVin()); // 4
+    return *this;
+  }
+};
+
+int main() {
+  Engine* e1 = new Engine("123456789");
+  Auto mustang(e1);
+  mustang = mustang;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：自我赋值测试
+
+注释2：仅当源不是目标时才删除
+
+注释3：如果可以，请使用 nullptr
+
+注释4：安全地访问有效数据
+}
+
+上述失败案例中的赋值不太可能发生；没有人会那么不负责任，对吧？但是，如果指针存储在容器中，则从视觉上发现将对象赋值给自己的能力会变得模糊不清。类似这样的情况可能会导致自我赋值，但根本不明显：
+
+\begin{cpp}
+autos[i] = autos[j];
+\end{cpp}
+
+此外，指针可能会引入意外的自我分配，如下例所示：
+
+\begin{cpp}
+*pcar1 = *pcar2;
+\end{cpp}
+
+必须对自我分配进行测试；如果发现这种情况，则需要快速退出复制分配操作符并且不删除任何资源。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+出于性能和正确性原因，始终在每个复制和复合赋值运算符中测试自我赋值。
+
+\item
+确保在删除动态资源后将指针清零。
+
+\item
+如果目标对象与源对象相同，则立即退出。
+
+\item
+请警惕通过指针进行自我赋值，无论是直接进行还是使用容器元素进行。
+\end{itemize}
+
+
+
+
+
+

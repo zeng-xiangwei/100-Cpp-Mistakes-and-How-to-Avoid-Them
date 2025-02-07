@@ -1,0 +1,107 @@
+这个错误注重效率，影响性能。许多程序员都熟悉使用索引来迭代数组，并将这种方法应用于容器。
+
+\mySamllsection{问题}
+
+开发使用数组的代码会将开发人员的思维集中到一种迭代方法中。在循环中使用索引很常见，并且适用于许多问题；但是，使用索引可能会不必要地限制一个人的思维，并在使用不同的容器时导致问题。
+
+数组很少是容器的最佳选择。标准模板库提供了几个更专业的容器，比数组更实用。缺少这些容器会人为地限制开发人员，并导致他们不 必要地设计和重写代码。优先使用索引而不是迭代器会影响性能。循环体通常足够大，以至于这种影响可以忽略不计——但不一定。
+
+清单 6.16 展示了索引以迭代几个容器。仅包括几个有用的容器；其他容器的工作方式类似（例如，deque、list 和 map）。这种缺失不是懒惰；其中一些缺少的容器无法索引，这使得处理它们与从 C 或课堂上学到的方法截然不同。将数组传递给函数的不便之处在于需要将元素数量作为附加参数传递。很容易弄错这个值，导致数据丢失或访问超出数组末尾的内容。此外，调用者需要负责处理函数应该处理的细节。总的来说，数组通常不是容器的良好选择。
+
+\filename{清单6.16 对函数中的数组进行索引}
+
+\begin{cpp}
+double sum(const double* values, int size) {
+  double sum = 0.0;
+  for (int i = 0; i < size; ++i)
+    sum += values[i];
+  return sum;
+}
+int main() {
+  double vals[] = { 3.14, 2.78, 3.45, 7.77 };
+  std::cout << sum(vals, 3) << '\n'; // 1
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：糟糕！使用的是最后一个索引，而不是计数
+}
+
+\mySamllsection{分析}
+
+C 语言编程没有索引的替代方案。人们犯了很多错误。虽然错误不是索引固有的特性，但在 C 语言中，出错的风险是巨大的。主要原因是开发人员必须跟踪值列表和大小，并将它们传递给函数或在循环中使用它们。
+
+关于数组的使用及其局限性的话题已经有很多文献记载，许多教科书都侧重于该技术。一旦深入记忆，使用迭代器似乎尴尬和“不同”。我们首先学到的东西通常被视为正确、规则和有效的。索引具有这种效果，在大多数情况下是一个糟糕的选择。
+
+\mySamllsection{解决}
+
+在大多数情况下，使用迭代器是理想的选择。首先，所有标准模板库容器都使用它们。其次，它们经过了优化，通常比索引更高效。第三，它们不允许出现差一错误。清单 6.17 演示了使用各种容器的迭代器。它们提供的一致性很重要；如果一个人学会了在一种情况下如何迭代，那么其他情况下也会类似。这种方法应该足够熟悉，成为肌肉记忆。
+
+与数组不同，STL 容器非常智能；它们知道自己的大小，并可以与迭代器交互，从第一个元素开始迭代到末尾。该方法不需要根据容器进行更改。
+
+\filename{清单6.17 对vector对象使用迭代器}
+
+\begin{cpp}
+double sum(const std::vector<double>& values) {
+  double sum = 0.0;
+  for (std::vector<double>::const_iterator it = values.begin();
+      it != values.end(); ++it)
+    sum += *it;
+  return sum;
+}
+
+int main() {
+  std::vector<double> vals;
+  vals.push_back(3.14); vals.push_back(2.78);
+  vals.push_back(3.45); vals.push_back(7.77);
+  std::cout << sum(vals) << '\n';
+  return 0;
+}
+\end{cpp}
+
+有人可能会抱怨循环中的迭代器类型很复杂。这是一个合理的反对意见；现代 C++ 提供了使用 auto 关键字进行类型推导的能力，这通过让编译器推导正确的类型来消除这种复杂性。这确实节省了时间！
+
+为了证明其他容器的工作方式相同，请考虑使用 set 的清单 6.18。唯一的变化是容器的类型，集合而不是向量，以及向集合添加元素的变化，即 insert 而不是 push\_back。添加了第三个集合 inserts，以显示 set 消除了重复值。
+
+\filename{清单6.18 使用带有set的迭代器}
+
+\begin{cpp}
+double sum(const std::set<double>& values) {
+  double sum = 0.0;
+  for (std::set<double>::const_iterator it = values.begin();
+      it != values.end(); ++it)
+    sum += *it;
+  return sum;
+}
+int main() {
+  std::set<double> vals;
+  vals.insert(3.14); vals.insert(2.78);
+  vals.insert(3.45); vals.insert(7.77);
+  vals.insert(3.45); vals.insert(7.77); // 1
+  std::cout << sum(vals) << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：集合中重复的值将被忽略
+}
+
+随着时间的推移，这项技术变得更加简单，并通过标准化迭代任何容器的方法使开发人员受益。希望这足以激励人们停止使用数组！
+
+现代 C++ 引入了三种功能来简化或替代编码循环。请阅读“另请参阅”部分以了解有关这些功能的更多信息。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+尽可能使用标准模板库容器。
+
+\item
+在这些容器上使用迭代器来消除差一错误；让数据类型决定起点和终点。
+
+\item
+一般情况下，不要使用数组。
+\end{itemize}
+

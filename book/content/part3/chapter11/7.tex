@@ -1,0 +1,94 @@
+这个错误关注的是正确性，它对可读性有积极影响。在许多情况下，求值顺序是指定的，开发人员很快就会对如何编写代码来使用此顺序产生直觉。例如，更复杂的 for 循环对每个部分求值都有特定的顺序。求值参数似乎很简单，因为它们通常是某个值的副本、指针或对变量的引用。
+
+注意：在本讨论中，术语 parameter 的使用相当宽泛。有两组公认的术语来描述参数。第一组是在调用站点使用的值称为 parameters，函数参数列表中的变量称为 formal parameters。第二组是在调用站点使用的值称为 arguments，函数参数列表变量称为 parameters。虽然我更喜欢第二种，但我将使用第一种来与大量文献保持一致。
+
+\mySamllsection{问题}
+
+我们假设我们的开发人员热衷于减少调用函数时使用的击键次数，并决定在参数传递中引入一些副作用。表面上，这将减少代码行数，因为对参数的更新是函数调用的一部分。以下代码显示了使用两个值调用函数的简单方法。该函数确定相邻值是否增加。Increasing 表示左侧值小于或等于右侧值。
+
+它是如此简单，循环调用该函数很容易让人产生使用巧妙的技术来节省击键的诱惑。
+
+\filename{清单11.11 带副作用的函数调用}
+
+\begin{cpp}
+bool isIncreasing(int a, int b) {
+  return a <= b;
+}
+
+int main() {
+  std::vector<int> values;
+  for (int i = 0; i < 10; ++i)
+    values.push_back(i+1);
+  int loc = 0;
+  while (loc < 9) {
+    if (!isIncreasing(values[loc], values[++loc])) // 1
+      break;
+  }
+  if (loc == 9)
+    std::cout << "success\n";
+  else
+    std::cout << "failure\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：参数评估包括副作用
+}
+
+\mySamllsection{分析}
+
+函数代码是正确的，但调用代码包含一个重大错误。开发人员假设最左边的参数将首先被评估，获得 loc 处的值，然后在增加其位置后获得右侧参数的值。最右边的参数将获得 loc 处的值并更新它。一切都应该按预期工作，但循环在第一次迭代时失败。C++ 不保证哪个参数首先被评估；在我的设置中，最右边的参数首先被评估，增加 loc 然后确定其值。之后，建立 loc 处的值并将其作为第一个参数传递给函数。结果是每次循环都会比较相同的值，而不是相邻的值。此外，第一个元素从未被测试过。副作用导致程序失败，尽管它并不明显，并且函数是正确的。被比较的内容被掩盖了。
+
+\mySamllsection{解决}
+
+尽管在表达式求值中使用副作用的诱惑很大，但这几乎总是一个坏主意。直观的感觉是参数将按从左到右的顺序进行求值，但 C 之后的C++ 没有定义任何顺序。因此，不能假设任何顺序。
+
+要解决此问题，请确保参数不涉及表达式。在调用函数之前评估表达式将需要一些额外的击键，但正确性至关重要。以下代码更冗长；但它是正确的。
+
+\filename{清单11.12 在将表达式用作参数之前求值}
+
+\begin{cpp}
+bool isIncreasing(int a, int b) {
+  return a <= b;
+}
+
+int main() {
+  std::vector<int> values;
+  for (int i = 0; i < 10; ++i)
+    values.push_back(i+1);
+  int loc = 0;
+  while (loc < 9) {
+    int x = values[loc];
+    int y = values[++loc]; // 1
+    if (!isIncreasing(x, y))
+      break;
+  }
+  if (loc == 9)
+    std::cout << "success\n";
+  else
+    std::cout << "failure\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：在调用函数之前计算表达式的值
+}
+
+清单 11.12 中的代码比较相邻的值，从第一个值开始。前缀增量运算符的副作用的时间隔离得很好，没有意外。虽然代码可以更好地获取这两个值，并且应该编写更好的代码，但副作用代码的隔离得到了证明。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+切勿在参数中使用副作用，因为参数求值顺序未指定。
+
+\item
+尽量减少（或消除！）节省按键次数的巧妙编码；最好多花一些按键次数来清晰地传达意图并确保正确性。
+\end{itemize}
+
+
+
+
+

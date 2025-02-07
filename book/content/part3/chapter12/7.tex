@@ -1,0 +1,97 @@
+这种错误会影响有效性和可读性，在某些情况下，可能会对正确性产生负面影响。客户端代码永远不必知道算法或函数如何工作的具体细节；相反，它应该直观地调用函数，只提供解决问题所需的数据。
+
+\mySamllsection{问题}
+
+考虑以递归方式实现二分搜索的情况。为了尽量减少性能问题，数据集合通过引用传递。起始和结束索引值会针对每个后续递归调用进行调整。
+
+客户端代码调用递归函数并提供初始的起始和结束索引值。在这种情况下，客户端代码倾向于对索引值进行硬编码，因为它们必须确定函数调用的机制以及数据容器与该调用的关系。如果这样做，值很脆弱，如果在未适当改变索引值的情况下改变容器大小，将导致不正确的行为。
+
+希望客户始终使用正确的起始和结束索引值。他们可能会猜测他们的理解是否错误，或者他们的经验是否有限。这种方法很危险。
+
+\filename{清单12.13 公开实现细节的递归函数}
+
+\begin{cpp}
+bool bin_search(const std::vector<int>& values, int key, int start, int end)
+{
+  int mid = start + (end-start) / 2;
+  if (values[mid] == key) // mention previous 'else' issue
+    return true;
+  else if (values[mid] < key)
+    return bin_search(values, key, start+1, end);
+  else
+    return bin_search(values, key, start, end-1);
+}
+int main() {
+  std::vector<int> values;
+  for (int i = 0; i < 100; ++i)
+    values.push_back(i);
+  std::cout << bin_search(values, 55, 0, 99) << '\n'; // 1
+}
+\end{cpp}
+
+{\footnotesize
+注释1：客户端代码必须了解起始和结束索引值。信息量太大了！
+}
+
+\mySamllsection{分析}
+
+编写 main 函数的开发人员得到的索引值是正确的。不过，尚不清楚他们是否理解结束索引必须是容器大小 (100) 或最大索引 (99)。在略 有不同的情况下，可能会使用结束索引 100。要更正索引值，开发人员必须了解递归搜索如何使用该值。此信息负载会对有效性产生负面影响。
+
+理想情况下，搜索函数的开发人员应该对其进行编码，以便客户端无需了解索引值或函数的实现方式。在类开发中，封装会抽象这些细节，并提供一个最小的、希望是直观的界面。函数也应如此。
+
+\mySamllsection{解决}
+
+可以通过创建辅助函数来封装递归函数的功能。此函数采用搜索函数的名称，但消除了有关索引值或其他实现细节的任何知识。函数重载允许名称保持不变。递归函数名称无需更改即可表明它是递归的（除非这对开发人员来说是有用的文档细节）。辅助函数（可能是由递归函数的开发人员编写的）确定有关起始和结束索引值的详细信息。
+
+辅助函数的另一个好处是，结束索引是根据容器计算的，因此消除了 对该值进行硬编码的诱惑。如何调用递归函数的实现细节被抽象出来，客户端的接口被最小化为仅包含基本数据 - 值的容器和键。
+
+清单 12.14 在客户端代码和递归函数之间引入了辅助函数，与类的公共方法非常相似。这样做的目的是尽量减少客户端开发人员的认知负担，并允许在以后需要时重新实现该函数。
+
+\filename{清单12.14 从抽象的辅助函数调用的递归函数}
+
+\begin{cpp}
+bool bin_search(const std::vector<int>& values, int key, int start, int end) {
+  int mid = start + (end-start) / 2;
+  if (values[mid] == key)
+    return true;
+  if (values[mid] < key)
+    return bin_search(values, key, start+1, end);
+  return bin_search(values, key, start, end-1);
+}
+
+bool bin_search(const std::vector<int>& values, int key) { // 1
+  return bin_search(values, key, 0, values.size()-1);
+}
+
+int main() {
+  std::vector<int> values;
+  for (int i = 0; i < 100; ++i)
+    values.push_back(i);
+  std::cout << bin_search(values, 55) << '\n'; // 2
+}
+\end{cpp}
+
+{\footnotesize
+注释1：在客户端和递归函数调用之间进行转换
+
+注释2：使调用尽可能简单
+}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+尽量减少函数调用者需要提供的数据量；坚持只提供必要的数据。
+
+\item
+寻找辅助函数可以最小化界面并简化调用函数的情况。
+\end{itemize}
+
+
+
+
+
+
+
+
+

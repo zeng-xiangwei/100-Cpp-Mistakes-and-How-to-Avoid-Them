@@ -1,0 +1,202 @@
+这个错误主要针对可读性和有效性；但是，可能需要经过一段短暂而陡峭的学习曲线才能解决。一次性且不常调用的函数往往会使源代码变得混乱，并使查找它们变得令人分心。
+
+\mySamllsection{问题}
+
+让我们假设一个案例，开发人员编写代码来管理美国一所典型的学校。有几名学生在读，每个学生都必须在数据库中。与任何由多人组成的组织一样，必须进行排名或排序。我们的开发人员要求按姓名、年 龄和 GPA 对学生进行排名。
+
+为了便于处理，学生名单保存在容器中。因此，必须使用某种方法来迭代容器并确定首选顺序。修改容器内的顺序是可以接受的，以使事情变得简单。
+
+开发人员编写了三个独立函数来实现基于给定标准的排名。代码库比我们能记住的要大得多。这些新函数必须放在某个地方，因此它们在许多其他代码中的文件中定义，并且在其他地方调用这些函数来执行其行为。以下代码显示了这种情况。
+
+\filename{清单4.13 几个独立函数}
+
+\begin{cpp}
+class Student {
+private:
+  std::string name;
+  int age;
+  double gpa;
+public:
+  Student(const std::string& n, int a, double g) : name(n), age(a), gpa(g) {}
+  std::string getName() const { return name; }
+  int getAge() const { return age; }
+  double getGpa() const { return gpa; }
+};
+
+// assume lots of code
+
+bool by_name(const Student& s1, const Student& s2)
+{ return s1.getName() < s2.getName(); } // 1
+bool by_age(const Student& s1, const Student& s2)
+{ return s1.getAge() < s2.getAge(); } // 1
+bool by_gpa(const Student& s1, const Student& s2)
+{ return s1.getGpa() < s2.getGpa(); } // 1
+void output_by_student_name(const std::vector<Student>& s) {
+  for (int i = 0; i < s.size(); ++i)
+    std::cout << s[i].getName() << '\n';
+  std::cout << '\n';
+}
+// assume even more code
+
+int main() {
+  std::vector<Student> s;
+  s.push_back(Student("Susan", 23, 3.85));
+  s.push_back(Student("James", 24, 3.35));
+  s.push_back(Student("Annette", 25, 3.75));
+  s.push_back(Student("Wilson", 26, 3.8));
+
+  std::sort(s.begin(), s.end(), by_name); // 2
+  output_by_student_name(s);
+  std::sort(s.begin(), s.end(), by_age); // 2
+  output_by_student_name(s);
+  std::sort(s.begin(), s.end(), by_gpa); // 2
+  output_by_student_name(s);
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：几个隐藏在代码中的函数，只使用一次
+
+注释2：函数被调用，但没有参数或实现的提示
+}
+
+\mySamllsection{分析}
+
+函数的命名使得描述其行为的句柄易于记忆。但是，当混入其他代码时，它们的实现就很难跟踪，而且需要记住另一件事。由于定义和调用站点相距甚远，开发人员必须记住其实现细节才能充分理解站点的预期行为。
+
+现在，让我们做一个大胆的假设：我们的开发人员最近有机会学习函数式编程。一个想法突然出现在他们的脑海中，认为这些函数可以重新设计成一种更具功能性的方法。一个新的需求出现了，开发人员认为这是尝试创建函子的绝佳机会。
+
+functor 是实现 operator() 的结构（或类）。此运算符有多种名称，但我们将其称为 apply operator (以下函数术语)。apply 运算符是一个执行行为的普通函数 — 在本例中，确定最大元素。为了实现这一点，创建了一个 Maximum 结构来传达其意图。其应用运算符用于查找向量中的最大值。将术语apply 视为将函数应用于数据；也许，这感觉很落后，但这是函数式思维方式。传统的命令式编程更多地考虑将数据传递给函数并执行其行为；函数式编程考虑将函数印记或应用于数据——一种更以数据为中心的模型。
+
+清单 4.14 中的代码展示了确定最大值的两种实现。第一种是开发人员在创建函子后想出的。函子的实例化会创建一个函数对象 f。函数对象 f 对数据的应用是常规实现的；函数对象后面跟着一个参数列 表，并返回一个结果（如果有）。开发人员的团队负责人提供了另一种方法，如下所示。团队负责人建议使用 lambda 来简化代码，消除命名函子及其实例化，并让读者看到调用站点的行为。
+
+\filename{清单4.14 演示就地函数定义}
+
+\begin{cpp}
+template <typename T>
+struct Maximum { // 1
+  T operator()(const std::vector<T>& vals) { // 2
+    T max = vals[0];
+    for (const auto& v : vals)
+      if (v > max)
+        max = v;
+    return max;
+  }
+};
+
+int main() {
+  std::vector<int> v {3, 9, 6, 2 -1, 0, 8};
+  Maximum<int> f; // 3
+  std::cout << f(v) << '\n'; // 4
+  auto max = std::accumulate(v.begin(), v.end(), v[0],
+    [](auto a, auto b){return std::max(a, b); }); // 5
+  std::cout << max << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：定义函数对象类（函子）
+
+注释2：定义应用运算符
+
+注释3：实例化函数对象类，生成函数对象
+
+注释4：将函数对象应用于数据；调用应用运算符
+
+注释5：使用带有局部最大值 lambda 函数的数值算法
+}
+
+\mySamllsection{解决}
+
+团队负责人展示了 lambda 的一个优势，即它能够在需要的地方准确定义行为。这种方法消除了回滚和寻找函数定义以及定义函子的尴尬。清单 4.15 中的代码演示了按姓名、年龄或 GPA 对学生进行排名的原始三个函数。在此示例中，行为是在使用时定义的，清楚地传达了 正在执行的操作。诚然，最初几次编写和阅读 lambda 需要更长的时间，但一旦理解了，lambda 就会变得惯用且自动化。
+
+由于 lambda 是函数对象，因此可以将它们分配给变量，并在调用点传递该变量。GPA 对学生进行排名的地方就证明了这种方法。
+
+\filename{清单4.15 原位函数定义（lambda）}
+
+\begin{cpp}
+class Student {
+private:
+  std::string name;
+  int age;
+  double gpa;
+public:
+  Student(const std::string& n, int a, double g) : name(n), age(a), gpa(g) {}
+  std::string getName() const { return name; }
+  int getAge() const { return age; }
+  double getGpa() const { return gpa; }
+};
+
+// assume lots of code
+
+void output_by_student_name(const std::vector<Student>& s) {
+  for (int i = 0; i < s.size(); ++i)
+    std::cout << s[i].getName() << '\n';
+  std::cout << '\n';
+}
+
+int main() {
+  std::vector<Student> s;
+  s.push_back(Student("Susan", 23, 3.85));
+  s.push_back(Student("James", 24, 3.35));
+  s.push_back(Student("Annette", 25, 3.75));
+  s.push_back(Student("Wilson", 26, 3.8));
+
+  std::sort(s.begin(), s.end(),
+    [](const Student& s1, const Student& s2){
+      return s1.getName() < s2.getName(); }); // 1
+  output_by_student_name(s);
+
+  std::sort(s.begin(), s.end(),
+    [](const Student& s1, const Student& s2){
+      return s1.getAge() < s2.getAge(); }); // 1
+  output_by_student_name(s);
+
+  auto f = [](const Student& s1, const Student& s2) {
+    return s1.getGpa() < s2.getGpa(); }; // 2
+  std::ranges::sort(s, f); // 3
+  output_by_student_name(s);
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：在需要的地方定义函数
+
+注释2：在需要之前定义函数
+
+注释3：使用范围并将函数对象作为参数传递
+}
+
+GPA 的排序在姓名和年龄方面略有不同。它展示了使用范围 API 的替代方法。它更紧凑、更易读且更易于编写。那么为什么要等到开始使用范围呢？
+
+Lambda 具有广泛的适用性；当一次性且不常调用的函数在编写或研究的代码上下文中难以找到和记住时，它们就会大放异彩。Lambda 函数提供了在需要时准确定义函数的机会，使开发人员和维护人员无需寻找其实现。
+
+一般来说，lambda 函数最好只使用一次；如果多次调用，则将 lambda 赋给变量。当然，在需要的地方定义函数的好处就消失了；与几乎所有事情一样，必须考虑竞争值的权衡。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+将 lambda 用于简单、不常调用的函数；它们提供的文档可显著提高理解力，而不会占用过多的短期记忆。
+
+\item
+考虑在现有代码使用简单函数的地方添加 lambda。
+
+\item
+标准模板库有几个函数可用于代替编写实现（例如，std::max\_element 和 std::less、 std::sort）。
+
+\item
+考虑使用范围 API 来简化编码并方便阅读。程序员不必指定 begin 或 end 迭代器；范围会计算出这一点 — 只需提供容器和一个函数。
+\end{itemize}
+
+
+
+
+
+
+
+
+

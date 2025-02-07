@@ -1,0 +1,79 @@
+此错误会模糊变量的用途，从而影响可读性，并且可能存在一些轻微的有效性问题。返回多个值已被证明是有问题的，并且已使用了一些技术。这些方法通常难以阅读、编写或两者兼而有之。
+
+\mySamllsection{问题}
+
+有时，函数需要返回两个或更多值。一种显而易见的方法是在调用代码中创建被调用函数将修改的变量。为每个变量传递一个指针或使用一个引用参数是可行的；然而，引入的复杂性可能会混淆它们的使用并导致理解错误。
+
+清单 11.7 中的代码执行整数除法并返回商和余数。开发人员使用了 一个输出参数，因为该函数只能返回一个值。余数参数是一个引用变量，是调用代码中某个值的别名。该函数修改了调用代码的变量 ，一切正常；但是，读者可能不会注意到这种用法，并在（宝贵的）时间内感到困惑。
+
+\filename{清单11.7 使用引用变量返回值}
+
+\begin{cpp}
+int divide(int value, int divisor, int& remainder) {
+  remainder = value % divisor;
+  return value/divisor;
+}
+int main() {
+  int x = 42;
+  int y = 4;
+  int r; // 1
+  int q = divide(x, y, r);
+  std::cout << x << " divided by " << y << " is " << q
+    << " with remainder " << r << '\n';
+  return 0;
+}
+\end{cpp}
+
+
+{\footnotesize
+注释1：不明显的返回值
+}
+
+\mySamllsection{分析}
+
+读者可能需要一段时间才能发现调用代码中的局部变量 r 未初始化，因为被调用函数中的代码对其进行了初始化。这不符合预期的模式；但是，这比有初始化值的情况略微更具可读性。通常，程序员不希望函数修改参数值；相反，他们希望计算结果以可以分配给变量的方式返回。
+
+使用指向调用者局部变量的指针不会改变这种情况；它只会改变其实现。语法更混乱，函数的代码也略显笨拙。
+
+\mySamllsection{解决}
+
+标准模板库提供了一个由类模板实现的包含两个类型值的容器。此std::pair 允许函数返回两个更符合预期行为的值。此外，无需定义结构或类来包含这些值，因为标准模板库已经这样做了。
+
+\filename{清单11.8 使用std::pair返回两个值}
+
+\begin{cpp}
+std::pair<int, int> divide(int value, int divisor) {
+  return std::make_pair(value / divisor, value % divisor);
+}
+
+int main() {
+  int x = 42;
+  int y = 4;
+  std::pair<int, int> res = divide(x, y); // 1
+  std::cout << x << " divided by " << y << " is " << res.first
+    <<" with remainder " << res.second << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：两个值均返回，这样读起来更顺畅
+}
+
+另一种方法是返回一个数组，调用者可以从中提取值；但是，这种方法可能晦涩难懂，影响可读性。它近似于使用 std::pair，但灵活性较差。数组元素必须是同质的，而 std::pair 允许异质类型。
+
+最后一种选择是返回一个结构并让调用代码从其字段中提取值。这种方法更易读，但需要编写一个新结构，可能只使用一次。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+尽量减少输出变量的使用；如果可能的话，消除它们。
+
+\item
+尽可能使用标准模板库提供的功能。
+\end{itemize}
+
+
+
+

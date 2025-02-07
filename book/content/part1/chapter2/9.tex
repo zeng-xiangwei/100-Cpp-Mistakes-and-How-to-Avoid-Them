@@ -1,0 +1,231 @@
+这个错误主要涉及正确性和有效性。共享指针比原始指针更昂贵，一旦理解了该方法，可读性可能会增强。
+
+\mySamllsection{问题}
+
+有几种数据结构需要处理以各种方式排列的动态分配实体。这些动态资源最好使用 RAII 进行管理，但当需要多次引用实体时，了解何时以及谁应该删除资源会很复杂。
+
+清单 2.17 是我们开发人员的典型示例，他在大学课堂上学会了使用指针。因此，实现 双端队列的结果将与此类似。代码运行良好，但在管理实体资源时不鼓励使用原始指针。如果犯了 错误，资源泄漏是不可避免的。此外，在抛出异常的应用程序中，谨慎管理的需要会更高。
+
+\filename{清单2.17 使用原始指针的双端队列（deque）}
+
+\begin{cpp}
+class Node {
+public:
+  Node(int value) : data(value), prev(NULL), next(NULL) {}
+  int data;
+  Node* prev;
+  Node* next;
+};
+
+class Deque {
+private:
+  Node* front;
+  Node* back;
+public:
+  Deque() : front(NULL), back(NULL) {}
+  ~Deque() { // 1
+    while (front != NULL) {
+      Node* temp = front;
+      front = front->next;
+      delete temp;
+    }
+  }
+  void push_front(int value) {
+    Node* newNode = new Node(value);
+    if (front == NULL)
+      front = back = newNode;
+    else {
+      newNode->next = front;
+      front->prev = newNode;
+      front = newNode;
+    }
+  }
+  void push_back(int value) {
+    Node* newNode = new Node(value);
+    if (back == NULL)
+      front = back = newNode;
+    else {
+      newNode->prev = back;
+      back->next = newNode;
+      back = newNode;
+    }
+  }
+  void pop_front() {
+    if (front != NULL) {
+      Node* temp = front; // 2
+      front = front->next;
+      if (front != NULL)
+        front->prev = NULL;
+      else
+        back = NULL;
+      delete temp; // 3
+    }
+  }
+  void pop_back() {
+    if (back != NULL) {
+      Node* temp = back; // 2
+      back = back->prev;
+      if (back != NULL)
+        back->next = NULL;
+      else
+        front = NULL;
+      delete temp; // 3
+    }
+  }
+};
+
+int main() {
+  Deque deque;
+  deque.push_front(3);
+  deque.pop_front();
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：用于消除剩余动态实体的强制析构函数
+
+注释2：对单个节点的两个引用
+
+注释3：删除过期实体
+}
+
+\mySamllsection{分析}
+
+要将节点放入双端队列或从双端队列中移除节点，至少需要两个指针来引用该节点。如果使用其他指针（例如索引队列），则多个指针可能引用单个节点。原始指针为多个指针引用单个节点提供了一种简单的方法，但这种共享使节点的管理变得复杂。
+
+有多个地方需要删除节点。每个需要删除的地方都必须正确编码，否则存在很大的资源泄漏机会。析构函数和这些单独的删除点是一种认知负担，因为开发人员必须解决两个问题。首先，必须正确设计和编码双端队列。其次，资源管理是作为对双端队列的支持而强制的。这种方法比必要的更复杂、更分散注意力。
+
+\mySamllsection{解决}
+
+消除管理动态资源的需要可以解决两个问题之一，从而留出时间和精力来处理另一个问题。现代 C++ 方法是使用 std::shared\_ptr 来管理资源。尽可能使用 std::make\_shared 而不是 new 关键字。共享指针使用 RAII 模式，设计用于对单个资源进行两次或多次引用时。std::shared\_ptr 通过跟踪对资源的引用计数来管理资源。每次复制或分配时计数都会增加，每次超出范围的共享指针时计数都会减少。当计数达到零时，资源将被删除。因此，不需要用户编写管理代码。太棒了！
+
+苦乐参半才是真正的味道。std::unique\_ptr 很便宜，应该用于任何不需要共享的资源。std::shared\_ptr 并不便宜，应该只在需要共享时使用。首先，共享指针（参见清单 2.18）比唯一指针大，因为必须维护一个计数变量。其次，计数变量的管理需要额外的周期。因此，只在必要时使用这些智能指针，尽可能优先使用唯一指针。
+
+\filename{清单2.18 使用 shared\_ptr 的双端队列（deque）}
+
+\begin{cpp}
+class Node {
+public:
+  Node(int value) : data(value) {}
+  int data;
+  std::shared_ptr<Node> prev; // 1
+  std::shared_ptr<Node> next; // 1
+};
+
+class Deque {
+private:
+  std::shared_ptr<Node> front;
+  std::shared_ptr<Node> back;
+public:
+  Deque() : front(nullptr), back(nullptr) {} // 2
+  void push_front(int value) {
+    std::shared_ptr<Node> newNode = std::make_shared<Node>(value);
+    if (front == nullptr)
+      front = back = newNode;
+    else {
+      newNode->next = front;
+      front->prev = newNode;
+      front = newNode;
+    }
+  }
+  void push_back(int value) {
+    std::shared_ptr<Node> newNode = std::make_shared<Node>(value);
+    if (back == nullptr)
+      front = back = newNode;
+    else {
+      newNode->prev = back;
+      back->next = newNode;
+      back = newNode;
+    }
+  }
+  void pop_front() {
+    if (front != nullptr) {
+      front = front->next;
+    if (front != nullptr)
+      front->prev = nullptr;
+    else
+      back = nullptr;
+    }
+  }
+  void pop_back() {
+    if (back != nullptr) {
+      back = back->prev;
+      if (back != nullptr)
+        back->next = nullptr;
+      else
+        front = nullptr;
+    } // 2
+  }
+};
+
+int main() {
+  Deque deque;
+  deque.push_front(3);
+  deque.pop_front();
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：shared\_ptr 被隐式初始化
+
+注释2：需要析构函数和删除函数
+}
+
+std::shared\_ptr 的另一个优点是它们不需要显式初始化；它们在构造时被初始化为 nullptr，节省开发人员的精力。
+
+使用智能共享指针时会出现一个问题——循环引用的可能性，即一个实体使用共享指针引用另一个实体，反之亦然。共享指针 会跟踪对其共享实体的引用数量。每次构造引用它的共享指针时，计数都会增加，每次销毁共享指针时，计数都会减少。如果计数达到零，则删除共享资源；但是，在循环引用中，计数可能永远不会达到零，从而导致资源泄漏。
+
+清单 2.18 中的代码很容易转换为容易出现循环引用问题的双向链表。如果您遇到这种情况，请考虑使用 std::weak\_pointer 来打破循环。弱指针 的工作方式类似于共享指针，但它不共享资源的所有权。这种类型的指针必须在取消引用之前转换为 std::shared\_ptr 。如果转换成功，则创建一个有效的指针；如果转换失败，则转换返回初始化为 nullptr 的共享指针。
+
+虽然代码演示了双端队列，但标准模板库提供了自己的出色版本，称为 std::deque。请使用此双端队列，避免编写自己的双端队列，除非您想使用共享指针进行演示！
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+请记住，使用智能指针无需管理动态资源，并且可将注意力集中在正在解决的问题上。
+
+\item
+当动态资源需要多个引用时，请使用 std::shared\_ptr；记住使用 std::weak\_ptr 打破循环引用。
+
+\item
+请确保在取消引用之前转换 std::weak\_ptr。
+
+\item
+大多数情况下倾向于使用 std::unique\_ptr。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,131 @@
+此错误主要关注正确性，并包含大量可读性和有效性。键盘输入始终以字符流的形式完成；但是，这些字符没有固有含义。换句话说，没有上下文来了解它们的数据类型应该是什么。转换函数强制此上下文。
+
+C 为编译器无法直接转换的数据类型提供了转换函数。atoi 函数用于将 C 样式字符串转换为整数值。sprintf 类函数可反转方向，获取数值数据并构建相应的 C 样式字符串。
+
+\mySamllsection{问题}
+
+atoi 函数分析 C 样式字符串并跳过任何前导空格。从第一个非空格字符开始，它扫描与整数值一致的字符。这些字符包括前导加号或减号和十进制数字。发现的第一个不符合此模式的字符被视为分隔符，转换过程结束。
+
+如果输入的是空字符串或者没有找到有效的整数类型字符，函数会悄悄返回一个 0 值。考虑以下输入年龄的代码。
+
+\filename{清单5.14 输入表示年龄的信息}
+
+\begin{cpp}
+int main() {
+  std::cout << "Enter your age: ";
+  std::string input;
+  std::cin >> input;
+
+  int age = atoi(input.c_str()); // 1
+  std::cout << "On your next birthday, you will be " << age + 1 << " years
+  old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：将无效输入和零值转换为整数零
+}
+
+假设输入的是有效数字，则一切正常。但是，如果收到无效输入，转换函数将失败，并通过返回 0 来表示。如果输入恰好是 0，转换函数还会返回 0。缺少的是返回的 0 是有效（例如，输入了 0 数字）还是无效（例如，输入了 cat）的基本知识。
+
+\mySamllsection{分析}
+
+atoi 类函数的根本问题是 0 返回值需要澄清。如果清单 5.14 中代码的用户恰好是婴儿，则输出结果是正确的。如果用户在键盘上乱摸，输入了 0 和 9 之间的数字以外的任何内容，则输出结果不正确。
+
+添加测试以确定值是否合法为 0 需要检查每个输入数字以确保它们在有效范围内。即使添加了此检查功能，结果也会很混乱且难以阅读。由于 C++ 提供了为转换添加智能的方法，因此请这样做以验证输入。您的用户可能不会感谢您——更好的是，他们会克制自己不骂您。
+
+\mySamllsection{解决}
+
+虽然解决这个问题的方法不止一种，但最简单的解决方案是使用stringstream 类，使用熟悉的流和提取运算符来解析字符串数据。此方法的一个好处是能够测试输入字符串流是否失败，而 atoi 类型函数不提供此功能。
+
+\filename{清单5.15 检查输入的年龄}
+
+\begin{cpp}
+int main() {
+  std::cout << "Enter your age: ";
+  std::string input;
+  std::cin >> input;
+
+  std::istringstream is(input);
+  int age;
+  is >> age;
+  if (is.fail()) { // 1
+    std::cout << "Invalid input\n";
+    return 1;
+  }
+  std::cout << "On your next birthday, you will be " << age + 1 << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：可以检查无效输入并进行适当处理
+}
+
+如果未选中 fail 函数，则默认行为与 atoi 相同 — 对于无效数据，返回零值。检查流中是否存在不正确的数据；对象很聪明，会使用它们的知识。这样做可确保程序更正确。使用提取运算符可以轻松检查将文本转换为预期数据类型是否失败。请务必检查转换结果。C++11 提供 std::stoi 函数，用于将 C 样式或 C++ 样式的字符串转换为数值，并在失败时抛出异常。C++17 提供 std::from\_chars 以有效地将文本转换为数字并允许检查错误。要查看这些选项的实际效果，请考虑以下代码清单。
+
+\filename{清单5.16 检查年龄的输入(现代方式)}
+
+\begin{cpp}
+int main() {
+  std::cout << "Enter your age: ";
+  std::string input;
+  std::cin >> input;
+  int age;
+
+  // C++11
+  try {
+    age = std::stoi(input);
+  } catch (const std::invalid_argument& e) {
+    std::cout << "stoi: Invalid input\n";
+    return 1;
+  }
+  std::cout << "On your next birthday, you will be " << age + 1 << " years old\n";
+
+  // C++17
+  auto result = std::from_chars(input.data(), input.data() + input.size(), age);
+  if (result.ec != std::errc()) {
+    std::cout << "from_chars: Invalid input\n";
+    return 1;
+  }
+  std::cout << "On your next birthday, you will be " << age + 1 << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+使用输入流，这样可以测试故障。
+
+\item
+尽可能使用抛出异常的函数；它们很容易检查。
+
+\item
+尽可能使用 C++ 功能将对 atoi 的调用更 改为其他更智能的解决方案。
+
+\item
+如果您可以使用现代 C++，请考虑使用 std::stoi 或 std::from\_chars 函数。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

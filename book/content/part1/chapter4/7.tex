@@ -1,0 +1,104 @@
+这个错误会影响可读性、有效性，并且在一定程度上影响正确性。常量是必不可少的，但表达它们通常会导致代码难以阅读、值被截断以及使用不灵活。
+
+\mySamllsection{问题}
+
+许多程序必须定义常量或使用将单位按常量转换的函数。传统上，可以使用 \#define 或 const 定义来指定常量或函数的名称和值，我们使用它们将值从一种单位类型转换为另一种单位类型。
+
+下面的代码展示了使用定义常量的三个例子。第一个是一年中的秒数（为简单起见，假设为非闰年）。但是，这个定义有一个问题：它太大了 10 倍。
+
+\filename{清单4.16 常数值的传统用法}
+
+\begin{cpp}
+const int SEC_PER_YEAR = 315360000; // 1
+
+const double pi = 3.1415927; // 2
+struct Circle {
+  double radius;
+  Circle(double r) : radius(r) {}
+  double perimeter() throw() { return 2 * pi * radius; }
+  double area() throw() { return pi * radius * radius; }
+};
+
+int main() {
+  Circle c(3);
+  std::cout << "perimeter " << c.perimeter() << ", area " << c.area() << '\n';
+
+  double rads = 90 * pi / 180; // 3
+  std::cout << "90 degrees is " << rads << " radians\n";
+
+  std::cout << "There are " << SEC_PER_YEAR << " seconds in a year\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：这是正确的吗？还是这 10 倍太大了？
+
+注释2：不准确的近似值
+
+注释3：不灵活的方法，仅适用于 90 度
+}
+
+\mySamllsection{分析}
+
+定义第一个常量时很容易犯错误。开发人员很难区分零的数量，错误地多加了一个。第二个是 pi 的截断值。开发人员为许多用途编写了 一个合理的近似值，但考虑到数据类型可以表示的内容，这个近似值相对不精确。最后，将 90 度转换为弧度不够灵活——它只适用于 90 度。如果能用函数来表示会更好。
+
+\mySamllsection{解决}
+
+现代 C++ 为这三个问题提供了解决方案。首先将解决 pi 的值。numbers 标头定义了此值和其他几个值，而不是由开发人员创建一些近似值。系统架构会考虑这些值，并选择最佳值；无需再次手写它们。
+
+使用千位分隔符改进了每年秒数的定义。撇号将常数值分成几组，这些组与书籍或文章中的读法相近。逗号已被定义为运算符，因此选择了类似的符号。使用它简化了零的数量计算（在本例中），并使错误更加明显。
+
+最后，将度数转换为弧度使用用户定义文字 (UDL)。operator"" 是一个接受参数值的函数并对其进行转换。结果是一个可读的用法，可以处理任何合法的值。
+
+\filename{清单4.17 改进了常数值的使用}
+
+\begin{cpp}
+constexpr double operator"" _deg_in_rad(long double d) { // 1
+  return d * std::numbers::pi / 180;
+}
+
+constexpr int SEC_PER_YEAR = 31'536'000; // 2
+
+struct Circle {
+  double radius;
+  Circle(double r) : radius(r) {}
+  double perimeter() noexcept { return 2 *
+  std::numbers::pi * radius; } // 3
+  double area() noexcept { return std::numbers::pi * radius * radius; }
+};
+
+int main() {
+  Circle c(3);
+  std::cout << "perimeter " << c.perimeter() << ", area " << c.area()
+    << '\n';
+
+  std::cout << "90 degrees is " << 90.0_deg_in_rad << " radians\n";
+
+  std::cout << "There are " << SEC_PER_YEAR << " seconds in a year\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：执行转换的用户定义文字
+
+注释2：易于阅读的精确分隔的数字
+
+注释3：这是该架构所能提供的最好的近似
+}
+
+定义常量通常是必要的。可用的现代 C++ 技术使代码更易读且更易于实现。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+使用千位分隔符来分隔长数字序列。
+
+\item
+使用 operator"" 轻松地将一个单位转换为另一个单位；可以为任何数据类型创建文字 - 查看 std::chrono,，它具有强类型 minutes、hours 等，展示了这一强大的概念。
+
+\item
+使用 numbers 标头中定义的常量来简化使用并获取系统的最佳近似值。
+\end{itemize}

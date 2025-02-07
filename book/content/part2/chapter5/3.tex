@@ -1,0 +1,121 @@
+此错误会影响可读性，有时还会影响效率。误解 NULL 宏可能会导致正确性问题。
+
+\mySamllsection{问题}
+
+一般建议是尽可能避免使用宏。此建议至关重要，因为 NULL 宏值和类型不确定。此代码是在 64 位架构上编写的，其中指针的大小为 64 位，这也是 long 的大小。您的系统可能具有不同的大小和不同的NULL 定义。我的系统上的 unicode/utypes.h 中的定义如下：
+
+\begin{cpp}
+#define NULL ((void *)0)
+\end{cpp}
+
+考虑清单 5.5，其中 NULL 有两种使用方式，但这两种方式都不明显。以下清单中的第一个重载 compute 函数采用 long 值，而第二个重载函数采用 long 指针。对 compute 的第一次调用传递了初始化为 NULL 的 long。该调用的明显选择是匹配第一个函数。第二次调用传递了 NULL 值，该值应与第二个 compute 函数匹配。
+
+\filename{清单5.5 以两种方式误用NULL}
+
+\begin{cpp}
+long compute(long n) { // increment the value
+  return ++n;
+}
+
+long compute(long* p) { // increment valid dereferenced pointer value
+  if (p)
+    return ++*p;
+  return 0;
+}
+
+int main() {
+  long x = NULL; // 1
+  long n = compute(x); // 2
+  std::cout << n << '\n';
+  n = compute(NULL); // 3
+  std::cout << n << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：使用 NULL 作为整数零值，这是不好的形式
+
+注释2：长值应该与第一个函数匹配
+
+注释3：NULL 指针应该与第二个函数匹配
+}
+
+\mySamllsection{分析}
+
+代码似乎先调用第一个函数，然后调用第二个函数；然而，这是不正确的。第一个调用匹配 long 值（第一个函数），第二个调用也匹配long 值（第一个函数）。这不明显吗？NULL 宏读作“未引用有效内存对象的指针”。清单 5.5 中的代码使用 NULL 的定义，即 long 整数值零；它是 not 指针。但这是该宏的部分问题；它读起来像一个指针，并被用作指针，但它不是指针。读者很容易被误导。
+
+此外，不同架构上的不同编译器对 NULL 的定义可能不同。因此，一个系统上的任何“有效”使用不一定适用于另一个系统。如果开发人员在其系统上使用 NULL，他们可能会假设另一个系统会以相同的方式工作。他们错了。NULL 没有明确的定义，因此难以一致地使用。它的自然语义在未将其定义为指针的系统中是不正确的（C 确实将其定义为指针）。一些实现将NULL 定义为零的整数值，其大小与指针大小匹配。但是，如果不检查，您能确定吗？
+
+第一行代码将 NULL 用作零值。这看起来像是一个专门用于教学目的的人为错误，但请放心，这种情况经常发生，一些（也许是大多数） 编译器会检测并警告这种不正确的使用。我曾在代码库中看到过这种情况，其中初始化器和参数值需要为零——太可怕了！
+
+\mySamllsection{解决}
+
+首先，不要将 NULL 用作巧妙的零值。其次，请注意 NULL 不是指针，不能用作指针。描述不指向有效内存对象的指针的理想前现代 C++ 方式是使用零值。如果开发人员想要使用 NULL 来实现指针，则必须将其转换为适当大小的指针。使用 NULL 的一个优点是它比零值更好地传达了指针语义。
+
+\filename{清单5.6 以更好的方式使用NULL}
+
+\begin{cpp}
+long compute(long n) { // increment the value
+  return ++n;
+}
+
+long compute(long* p) { // increment the value
+  if (p)
+    return ++*p;
+  return 0;
+}
+
+int main() {
+  long m = 0; // 1
+  long n = compute(m); // 2
+  std::cout << n << '\n';
+  n = compute((long*)NULL); // 3
+  std::cout << n << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：在需要零值的地方使用零
+
+注释2：匹配第一个函数，保留值语义
+
+注释3：与第二个函数匹配，保留指针语义
+}
+
+NULL 宏明确指出了分配指针的意图，即表示它不指向任何对象的值。但是，在转换宏时使用零值来消除奇怪之处会更好。
+
+现代 C++ 提供了一个语言关键字来解决 NULL 宏或零值的缺点。以下代码片段显示了如何正确地将指针变量分配给空值。nullptr 关键字是一个指针文字，因此不会玩游戏或发生隐式转换：
+
+\begin{cpp}
+long* p = new long(42);
+...
+delete p;
+p = nullptr;
+\end{cpp}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+使用零值声明一个不指向有效内存对象的指针。
+
+\item
+避免在任何地方使用 NULL 作为零值。
+
+\item
+避免使用 NULL 作为指针；它不是一个指针。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+

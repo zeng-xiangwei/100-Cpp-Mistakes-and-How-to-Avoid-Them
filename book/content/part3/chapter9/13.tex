@@ -1,0 +1,107 @@
+此错误主要影响性能，并对正确性有影响。这是一个经常发生的特殊问题。
+
+std::string 类很有用，它提供了重要的行为，可轻松处理文本。现代 C++ 增加了许多功能，每个新标准似乎都添加了更多有用的方法。充分利用该类非常重要，因为许多用户编写的类至少有一个此类型的实例变量。C++ 是少数几种不使字符串不可变的语言之一，因此这为正确性带来了一个微妙的问题。
+
+\mySamllsection{问题}
+
+我们正在为学校设计一个记录保存系统，我们需要对人进行建模。我们选择从 Person 类开始，最终从该类派生出其他类（当然，还要开发出良好的继承设计）。目前，我们正在处理少量的类功能。
+
+负责这项任务的开发人员最近了解了引用的强大功能，并选择返回对 name 实例变量的引用以提高性能。引用比副本更快，但也有一些缺点。以下代码显示了第一次尝试和一些意外行为 — 不知何故，name 实例变量被修改了。
+
+\filename{清单9.32 对一个人进行建模并尝试改进性能}
+
+\begin{cpp}
+class Person {
+private:
+  std::string name;
+  int age;
+public:
+  Person(const std::string& name, int age) : name(name), age(age) {}
+  std::string& getName() { return name; } // 1
+  int getAge() { return age; }
+};
+int main() {
+  Person sam("Samantha", 26);
+  std::string& name = sam.getName();
+  name += "x"; // 2
+  std::cout << sam.getName() << " is " << sam.getAge() << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：为了提高性能，返回实例变量的引用
+
+注释2：客户端代码不应该能够直接更改私有实例数据
+}
+
+开发人员本意是修改数据的副本，而不是修改实例变量。没有注意到任何问题，代码就通过了测试并被接受。
+
+\mySamllsection{分析}
+
+开发人员试图编写高性能代码。他们应该注意到 getName 访问器返回了对实例变量的引用；它不是数据的副本。引用是同一事物（实体）的不同名称 - 别名。如果修改了别名，则修改了实体。对高效实现的渴望掩盖了实际实例变量被暴露的事实。
+
+\mySamllsection{解决}
+
+返回对 std::string 实例变量的引用可防止复制该变量，从而节省内存分配和复制。但是，如果返回副本，则实例变量将不受客户端修改的影响。开发人员的意图值得称赞，但他们的实现却不尽如人意。这不仅限于 std::string；任何通过引用（或指针！）返回成员的类都会遇到同样的问题。
+
+获得引用的性能和私有实例变量的不可攻击性的方法是确保为std::string 变量返回 const 引用，如清单 9.33 所示。如果引用存储在某个局部变量中，则编译器确保它也必须是常量。因此，尝试通过引用修改数据会导致编译错误。此代码修复了急切开发人员的方法，同时保持了数据的完整性。
+
+另一方面，客户端代码试图更改访问器获取的数据是可疑的。如果修改了数据的本地副本，它将不再与对象的值匹配；因此，语义会发生变化。在某些情况下，这是有意为之，但要非常小心。最好复制或引用实例数据以保留对象的语义。代码始终可以在需要时访问实例变量值，并且始终与对象保持一致。本地保存数据允许修改和更改其含义。
+
+\filename{清单9.33 使用常量防止突变并提高性能}
+
+\begin{cpp}
+class Person {
+private:
+  std::string name;
+  int age;
+public:
+  Person(const std::string& name, int age) : name(name), age(age) {}
+  const std::string& getName() const { return name; } // 1
+  int getAge() const { return age; }
+};
+
+int main() {
+  Person sam("Samantha", 26);
+  const std::string& name = sam.getName(); // 2
+  // name += "x";
+  std::cout << name << " is " << sam.getAge() << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：返回对 std::string 实例变量的常量引用
+
+注释2：使局部变量不可变，以便编译并保留语义
+}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+为了提高效率，请通过引用返回 std::string 实例变量；为了 保证正确性，请确保引用是常量，以防止无意中修改实例变量。
+
+\item
+请记住，引用是别名；它们代表实际数据，而不是数据的副本。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

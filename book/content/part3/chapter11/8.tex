@@ -1,0 +1,134 @@
+这个错误会影响可读性，对有效性有轻微影响。命名参数的好处已经在 Python 和 JavaScript 等语言中得到证实。C++ 目前没有这个强大的功能，因此必须严格遵循参数列表。有时，参数的顺序应该更直观，但长列表会使这样做变得困难。
+
+\mySamllsection{问题}
+
+有些函数的参数列表很长，可能需要明确说明它们的顺序。以下代码演示了一个类，其中的几个参数对开发人员来说（显然！）具有一些有意义的顺序。但是，类用户可能需要明确顺序，这可能会导致错误使用。
+
+\filename{清单11.13 调用参数顺序不明显的构造函数}
+
+\begin{cpp}
+class Person {
+private:
+  std::string first;
+  std::string middle;
+  std::string last;
+  int year;
+  int month;
+  int day;
+public:
+  Person(const std::string& f, const std::string& l, const std::string& m,
+  int y, int d, int mo) :
+    first(f), middle(m), last(l), year(y), month(mo), day(d) {} // 1
+  const std::string& getFirst() const { return first; }
+  int getYear() const { return year; }
+};
+int main() {
+  Person p("Ann", "Konda", "A.", 2000, 14, 3); // 2
+  std::cout << p.getFirst() << " is " << 2024 - p.getYear() << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：命名不当且参数过多
+
+注释2：很难跟踪哪个参数是哪个，以及到底要包含多少个参数
+}
+
+\mySamllsection{分析}
+
+创建 Person 类的实例需要调用者传递六个参数：三个用于名称，三个用于出生日期。构造函数可能会更有帮助，因为它命名了参数使用单个字母。开发人员清楚地了解它们的含义，但需要通过更好的命名来传达这些知识。
+
+由于这六个参数是必需的，因此调用者必须按正确的顺序提供每个参数。很容易错误地按第一个、中间和最后一个的顺序指定名称（这对许多开发人员来说是直观的）。尽管如此，开发人员还是按第一个、 最后一个和中间的顺序排列它们。虽然这种方法本身并没有错，但必须澄清一下。
+
+需要的是一种方法来更好地按照调用者喜欢的顺序指定参数，同时又不损害构造函数的正确性。
+
+\mySamllsection{解决}
+
+命名参数将使这种方法更易于管理。由于 C++ 不支持，因此另一种方法是使用普通旧数据 (POD) 结构；有些人称之为 parameter object。POD 是一个传输层 - 它允许用户按照对他们有意义的顺序使用字段名称，并将该数据传送到构造函数。构造函数按照有意义的顺序从 POD 中提取数据。此层允许顺序变化而不影响正确性 - 事实上，它通过允许直观使用而不严格遵守特定顺序来确保正确性。此外，使用 POD 可以消除混乱的调用站点，因为单个参数可用于传递多个值。
+
+很难对参数数量做出任何严格的限制。短期记忆和直观使用表明参数数量最少为 3 个。程序员必须记住，其他人会使用他们的代码，因此无论设计“简单而明显”，其他人都可能不同意。请将参数数量保持在较小水平。
+
+这里必须说明一点：POD 不能确保所有值都已初始化。正确的构造函数设计对于防止数据丢失至关重要。
+
+\filename{清单11.14 使用POD作为命名变量技术}
+
+\begin{cpp}
+struct personPOD { // 1
+  std::string first;
+  std::string middle;
+  std::string last;
+  int year;
+  int month;
+  int day;
+};
+
+class Person {
+private:
+  std::string first;
+  std::string middle;
+  std::string last;
+  int year;
+  int month;
+  int day;
+public:
+  Person(const std::string& f, const std::string& l, const std::string& m,
+      int y, int d, int mo) :
+    first(f), middle(m), last(l), year(y), month(mo), day(d) {}
+  Person(const personPOD& pp) : first(pp.first), middle(pp.middle),
+    last(pp.last), year(pp.year), month(pp.month),
+    day(pp.day) {} // 2
+  const std::string& getFirst() const { return first; }
+  int getYear() const { return year; }
+};
+int main() {
+  personPOD pp;
+  pp.month = 3; // 3
+  pp.day = 14;
+  pp.year = 2000;
+  pp.last = "Konda";
+  pp.first = "Ann";
+  pp.middle = "A.";
+
+  Person p(pp);
+  std::cout << p.getFirst() << " is " << 2024 - p.getYear() << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：包含每个参数的 POD
+
+注释2：接受 POD 的构造函数
+
+注释3：使用命名字段以方便的顺序初始化 POD 字段
+}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+设置参数数量的限制，并使用 POD 传输超过该限制的参数。为不同的概念设置单独的 POD 有助于保持它们的一致性和连贯性。
+
+\item
+确保每个字段都已初始化，以防止破坏类不变量。
+
+\item
+当命名变量 合适但不可用时，请使用 POD。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,160 @@
+这种错误会影响有效性和可读性，并且会对正确性产生微妙但重大的影响。枚举允许开发人员命名文字值以增强符号可读性，但必须正确且清晰地编码。
+
+\mySamllsection{问题}
+
+变量和常量可用于命名概念，例如颜色。例如，可以为整数常量分配一些映射到红色或蓝色的值。除非开发人员小心谨慎，否则这种映射可能非常随意，读者可能需要澄清，主要是在使用组中的多个实体时。C++ 语言提供了一种简化此过程的方法，即使用 enum 常量。枚举中的命名实体可以表示集合中的可能值。
+
+枚举常量以整数形式实现，因此它们很容易与整数相互转换。这个事实听起来可能很强大，但通常没有什么意义。清单 4.3 显示了一个表示颜色的整数变量，该变量被分配了 2 的值。这是什么意思？
+
+我们的开发人员正在解决一个与汽车及其相互作用有关的问题。汽车和交通信号灯都有颜色。枚举颜色以便使用符号名称是有意义的。编译器默认为这些常量分配值，并且会自动考虑更改（即添加、删除或重新排列）。然而，我们的开发人员遇到了一些问题。以下代码显示了对汽车和交通信号灯的颜色属性进行建模的（简陋）尝试。
+
+\filename{清单4.3 有问题的全局命名空间枚举}
+
+\begin{cpp}
+enum TrafficColor {
+  Green,
+  Yellow, // 1
+  Red // 2
+};
+
+enum PaintColor {
+  Gray,
+  White, // 2
+  Black,
+  Paint_Red, // 3
+  Blue,
+  Paint_Yellow,
+  Paint_Green
+};
+
+int main() {
+  int color = 2; // 4
+  switch (color) {
+  case Red:
+    std::cout << "we have a red one\n";
+    break;
+  case Blue:
+    std::cout << "we have a blue one\n";
+    break;
+  case Yellow:
+    std::cout << "we have a yellow one\n";
+    break;
+  default:
+    std::cout << "we have a white one\n";
+    break;
+  // case White: // 5
+  };
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：红色交通信号灯进入全局命名空间
+
+注释2：两个枚举中的索引默认为1
+
+注释3：不能重复使用完全相同的枚举名称；必须对其进行修改
+
+注释4：为枚举分配和使用 int
+
+注释5：枚举中的重复索引值——无法定义
+}
+
+\mySamllsection{分析}
+
+枚举常量位于全局命名空间中。如果声明的符号不包含在特定命名空间中，则该命名空间是每个符号所在的位置。开发人员在使用enum 常量时发现了几个问题，如清单 4.3 所示。
+
+首先，如前所述，所有常量都在一个命名空间中，因此重复值会造成错误。重命名油漆颜色的努力表明开发人员必须弱化符号名称的含义才能解决这个问题。
+
+其次，由于整数支持常量，因此任何混合两个 enum 集的代码都存在多个冲突值的风险，因此它们会产生歧义或错误。 switch 语句不能有两个枚举常量值相同的情况，例如 Yellow 对应 TrafficColor 和White 对应 PaintColor（每个都分配了相同的值；在本例中为 1） 。其他逻辑可能会混淆两种颜色中的哪一种是预期的。
+
+第三，可以给已分配颜色的变量分配任意整数值。此示例为颜色分配了 2。开发人员必须努力清楚地传达分配的含义。需要在示例中明确说明值为 2 的枚举常量指的是哪个。
+
+最后，支持整数变量无法知道某个值是否超出范围。该变量可能被赋值为负数或大于最大有效常数值的值。读者和程序都不知道这是什么意思。更糟糕的是，代码可能会继续运行，但会意外或错误地处理不 正确的赋值（更多未定义的行为）。
+
+\mySamllsection{解决}
+
+现代 C++ 来救场了！枚举现在可以封装在类命名空间中。这让全局命名空间变得井然有序，允许在单独的命名空间中重复使用常量名称命名空间。尽管支持变量类型是整数，但代码无法为该变量分配整数值，因为分配必须在该类的枚举值集内。任何分配超出范围的值的尝试都会被阻止，因为没有合法的常量超出范围，也不能分配非法值。
+
+以下代码显示了如何使用 enum 类，将所有定义的值隔离到一个类中，而不会与另一个类冲突。一个类（和命名空间）的常量不能分配给另一个变量，从而避免了前面描述的一些问题。
+
+\filename{清单4.4 单独的名称空间枚举}
+
+\begin{cpp}
+enum class Traffic { // 1
+  Green,
+  Yellow,
+  Red
+};
+
+enum class Paint { // 2
+  Gray,
+  Black,
+  White,
+  Red,
+  Blue,
+  Yellow,
+  Green
+};
+
+int main() {
+  auto color = Traffic::Yellow; // 3
+  switch (color) {
+  case Traffic::Red: // 4
+    std::cout << "we have a red light\n";
+    break;
+  case Traffic::Yellow:
+    std::cout << "we have a yellow light\n";
+    break;
+  case Traffic::Green:
+  default:
+    std::cout << "we have a green light\n";
+    break;
+  };
+
+  Paint can = Paint::Blue;
+  switch (can) {
+  case Paint::Red:
+    std::cout << "we have a red cube\n";
+    break;
+  case Paint::Yellow:
+    std::cout << "we have a blue cube\n";
+    break;
+  case Paint::White:
+    [[fallthrough]];
+  default: // 5
+    std::cout << "we have a white cube\n";
+    break;
+  };
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：命名空间绑定枚举
+
+注释2：不同命名空间绑定枚举
+
+注释3：使用 auto 作为数据类型，该数据类型由初始化值推导而来
+
+注释4：与同名其他类中的枚举字面量不同
+
+注释5：消除故意 fall-through 行为的警告
+}
+
+[[fallthrough]] 注释记录了不使用 break 关键字的有意失败行为的情况。 switch 语句很容易出错，因此请使用所有可用的技术来防止错误。不要忘记最后一个右括号 (\}) 后面的语句结尾分号 (;)。
+
+枚举类将值隔离到一个命名空间中，并防止将任意值分配给类变量。使用这一重要功能，经典 enum 的问题得到解决并消除了歧义。如果需要指定 enum 类的底层表示类型，可以通过从基本类型扩展来完成：
+
+\begin{cpp}
+enum class Traffic : uint8_t {
+  ...
+};
+\end{cpp}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+将全局 enum 定义更改为 enum 类以消除所描述的问题。
+\end{itemize}

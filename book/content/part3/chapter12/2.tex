@@ -1,0 +1,71 @@
+这种错误会影响正确性和有效性。编写循环通常是靠肌肉记忆来完成的。在这种情况下，注意力不集中可能会导致问题，这些问题可能会潜伏一段时间后才会显现出来。
+
+\mySamllsection{问题}
+
+一些循环具有用于处理迭代的附加逻辑。C++ 提供了 break 和continue 关键字来修改循环控制。
+
+每个循环都包含四个部分，其中一些部分可能为空。了解这些部分对于设计正确的循环至关重要。第一个是 initialization section，其中设置循环控制变量或其他值 - 它是循环的先决条件。第二个是continuation test，它回答是否执行循环体 - 它通常测试循环控制变量 。第三个是 body，循环的原因 - 每次迭代时执行的代码。最后一个是update section，其中修改循环控制变量以使延续测试越来越接近终止条件。此顺序是为 while 循环（包括 for 循环）指定的。延续测试成为 do 循环中的第四部分，其他部分保持其现有顺序。
+
+许多程序员倾向于使用 for 循环，因为它们更简洁，循环控制变量的作用域仅限于循环内，并且编写速度更快。熟悉 for 循环和替代控制流（break 和 continue 关键字）可能会让粗心的开发人员在使用while 或 do 循环时遇到问题。当 for 循环执行 continue 关键字时，控制流会回到循环的“顶部”（参见以下列表）或更新部分，而更新部分恰好位于循环的顶部。
+
+\filename{清单12.3 带有continue关键字的while循环}
+
+\begin{cpp}
+int main() {
+  int x = 10;
+  while (x > 0) {
+    if (x % 3 != 0)
+      continue; // 1
+    std::cout << x << " is divisible by 3\n";
+    --x;
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：控制流至循环顶部——while 关键字
+}
+
+该代码是一个无限循环，将一直执行，直到用户感到沮丧或操作系统耗尽其时间配额而停止它。
+
+\mySamllsection{分析}
+
+在 while 或 do 循环中，continue 关键字使控制流向循环顶部，即连续测试或 do 关键字。这些循环和 for 循环之间的这种细微变化至关重要。
+
+\mySamllsection{解决}
+
+for 循环与 do 和 while 循环之间的细微差别在于，for 循环在循环的“顶部”具有初始化、延续和更新部分；只有主体未包括在内。其他两个循环将这些部分分散开来，因此顶部要么是单独的 do 关键字，要么是带有延续测试的 while 关键字。for 循环在执行 continue 关键字后立即调用更新部分。执行 continue 关键字时，while 和 do 循环从不调用更新部分。这一差异对于正确理解如何编写这些代码至关重要循环。以下代码复制了 continue 关键字之前的更新部分。
+
+\filename{清单12.4 在continue关键字之前正确执行更新部分}
+
+\begin{cpp}
+int main() {
+  int x = 10;
+  while (x > 0) {
+    if (x % 3 != 0) {
+      --x; // 1
+      continue;
+    }
+    std::cout << x << " is divisible by 3\n";
+    --x;
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：在 continue 关键字之前执行更新部分
+}
+
+这对于继续推动循环控制变量达到其终止条件至关重要。如果没有这个重复的部分，循环控制变量在本次迭代中不会发生变化，并产生无限循环。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+对于 while 和 do 循环，在执行 continue 关键字之前，始终先执行更新部分。
+
+\item
+最好使用 for 循环，因为这种行为对它们来说不是问题；while 或 do 循环中的重复更新部分可能是一种代码异味，这意味着设计可能较差或不正确。
+\end{itemize}

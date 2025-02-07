@@ -1,0 +1,144 @@
+这个错误主要集中在正确性上。基类建立并维护了类不变性，但容易 受到派生类所做的更改的影响。派生类有义务遵守基类不变性。可读性无疑得到了改善，有效性也可以得到改善。
+
+作为最佳实践，所有实例变量都应为私有变量。这种方法可确保没有外部代码可以在没有类严格控制的情况下访问或修改它们。引入继承后，派生类会发现它们可能需要的基类信息无法访问。与客户端代码一样，派生类必须使用基类访问器和修改器。但是，这种限制可能感觉过于严格。C++ 为基类提供了 protected 关键字，以允许派生类直接访问这些实例变量 - 外部代码仍然被禁止访问或修改这些变量。虽然这种放宽看起来不错，但它引入了违反类不变量的可能性（概率？）。
+
+\mySamllsection{问题}
+
+基类通过严格控制每个数据成员的值范围来维护其状态。构造函数和变量器应设计为初始化类不变量，将值保持在它们的适当边界，并防止任何越界突变的企图。如果基类已将这些变量设为受保护，则派生类可以直接访问这些变量。
+
+派生类应保持其类不变量并尽力遵守其基类不变量。不幸的是，编译器无法强制遵守任何一个不变量；程序员必须付出努力。此外，为了 使派生类正确维护基类不变量，开发人员必须掌握如何正确处理基类限制的外部知识。这些知识已存在于基类中，不应在派生类中重复。
+
+\filename{清单8.6 受保护实例变量的漏洞}
+
+\begin{cpp}
+class Person {
+protected:
+  std::string name;
+  int age; // 1
+public:
+  Person(const std::string& name, int age) : name(name) {
+    if (age < 0) // 2
+      throw std::invalid_argument("negative age");
+    this->age = age;
+  }
+  std::string getName() const { return name; }
+  int getAge() const { return age; }
+};
+class Student : public Person {
+private:
+  double gpa;
+public:
+  Student(const std::string& name, int age, double gpa) : Person
+  (name, age), gpa(gpa) {}
+  double getGpa() const { return gpa; }
+  void setAge(int age) { this->age = age; } // 3
+};
+
+int main() {
+  Student jane("Jane", 26, 3.85);
+  jane.setAge(-26);
+  std::cout << "Jane is " << jane.getAge() << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：易受攻击的实例变量
+
+注释2：经过适当验证，并保持类不变量
+
+注释3：危及基类不变量的权宜之计
+}
+
+\mySamllsection{分析}
+
+对于不理解或未充分维护基类不变量的派生类，一个或多个受保护的基类变量可能会被强制进入超出范围的状态，且不会发出警告。拒绝无效值变得不可能。Student 的 setAge 方法不限制参数值，而是直接设置 age 实例变量；发生这种情况是因为该变量是受保护的，而不 是私有的。
+
+Student 类的设计者认为使用 Person 基类的受保护变量是有利的。Student 程序员决定添加一个 setAge 方法，因为他们知道一些较新的学校规则会根据年龄而有所不同，并且学生可能会在学年期间过生日。
+
+Person 类正确验证了年龄输入值并拒绝了无效值。派生类需要充分了解添加 setAge 方法的含义，但未能做到这一点。由于基类构造函数验证了 age，因此一切最初看起来都很好。但是，基类不会改变age 实例变量；因此，需要一种快捷方式来直接改变变量。为了在Student 中正确实现 setAge 方法，派生类必须复制有关age基类变量。这种知识重复违反了 DRY 原则，并且给变量的封装带来了压力。
+
+\mySamllsection{解决}
+
+Person 基类负责维护其类的不变性。部分责任是通过拒绝其他类在没有某些验证逻辑保护的情况下直接访问其实例变量来处理的，如下面的清单所示。
+
+\filename{清单8.7 通过将实例变量设置为私有来增强安全性}
+
+\begin{cpp}
+class Person {
+private:
+  std::string name;
+  int age; // 1
+public:
+  Person(std::string name, int age) : name(name) { setAge(age); }
+  std::string getName() const { return name; }
+  int getAge() const { return age; }
+  void setAge(int age) {
+    if (age < 0) // 2
+      throw std::invalid_argument("negative age");
+    this->age = age;
+  }
+};
+
+class Student : public Person {
+private:
+  double gpa;
+public:
+  Student(std::string name, int age, double gpa) :
+    Person(name, age), gpa(gpa) {} // 3
+  double getGpa() const { return gpa; }
+};
+
+int main() {
+  Student jane("Jane", 26, 3.85);
+  jane.setAge(-26);
+  std::cout << "Jane is " << jane.getAge() << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：不易受到派生类突变的影响
+
+注释2：经过适当验证，并保持类不变
+
+注释3：必须使用经过适当验证的基类方法
+}
+
+基类正确地验证了年龄值，该值从构造函数、派生类和客户端代码中调用。派生类不需要知道任何有关有效年龄的信息，更不用说保证年龄了。它将这一责任委托给基类，基类是唯一应该知道的类。
+
+这次讨论并不意味着永远不要使用受保护的变量；有些情况下它们已经存在，你无法改变这一事实。但是，你可以（并且必须）尊重基类不变性并使用其变量。如果基类无法更改且没有验证变量，请在派生类中编写一个并注释原因。记住里氏替换原则 (LSP)；如果基类变量 未抛出而派生类变量抛出，则不满足替换要求。
+
+如果基类不打算向客户端代码公开其某些实例变量，则可以为派生类提供受保护的方法，以供其进行变异。这些方法确保基类能够控制其状态的任何更改，同时为派生类提供一个接口，以客户端代码无法实现的方式改变状态。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+消除尽可能多的受保护变量。
+
+\item
+始终让变量器验证其参数。
+
+\item
+了解派生类使用访问器和修改器的轻微尴尬完全可以通过基类保持其类不变性来抵消。
+
+\item
+考虑使用受保护的访问器和变量器来提供客户端代码无权使用的访问权限。
+
+\item
+不要将变量设为虚拟的；它们只能在所属类中实现。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+

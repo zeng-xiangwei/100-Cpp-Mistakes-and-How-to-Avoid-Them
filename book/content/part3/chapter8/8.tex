@@ -1,0 +1,160 @@
+此错误重点在于正确性。正确和不正确的实现之间的差异可能不会影响可读性、有效性或性能（如果影响，则取决于编译器的实现）。
+
+必须仔细考虑构造函数，因为正确初始化实例变量对于保持类不变至关重要。同样，必须仔细考虑析构函数。C++ 赋予开发人员类设计的权力和责任。必须考虑类以确定它是否应该使用继承、从继承而来或成为独立的数据类型。
+
+\mySamllsection{问题}
+
+独立类是最容易规划的。这并不意味着设计一定很容易；它只意味着没有继承，事情会更简单，而且你有更多的控制权。基类的设计会影响派生类的设计。在继承层次结构中犯下的错误可能会给派生类的开发人员带来痛苦。除了谨慎编程和考虑例外情况外，你可能对此无能为力。但是，如果你正在编写基类，你不仅要考虑你的类型，还要考虑所有的子类型——你的基类的行为将影响每一个派生类。
+
+如果将某个类设计为基类，则它应遵循一些规则。其中一条规则是，基类应提供虚拟析构函数，因为它应至少具有一个虚拟函数。反过来说，如果没有任何虚拟函数，则不要提供虚拟析构函数。除非打算将类设计为基类，否则类不应包含虚拟方法；因此，每个基类都应提供虚拟析构函数。
+
+使用基类指针或引用删除派生对象时，C++ 会让我们感到惊讶。多态行为只有使用指针或引用才有可能，因此必须使用这种方法。指针和引用并不意味着基于堆的对象，但这是一种非常常见的用例。那么问题是什么？尝试使用基类指针或引用删除派生类。似乎一切都应该没问题，但结果谁也说不准；更糟糕的是，这是未定义的行为。
+
+清单 8.15 中的代码有一个基类和一个使用动态资源的派生类。基类的析构函数未定义为虚拟的。主函数创建一个动态 Square 对象并将其赋值给 Shape 指针。使用完派生对象后，将其删除。
+
+\filename{清单8.15 没有虚析构函数的基类}
+
+\begin{cpp}
+class Point {
+private:
+  double x;
+  double y;
+public:
+  Point(double x, double y) : x(x), y(y) {}
+};
+
+class Shape {
+private:
+  Point* location;
+public:
+  Shape(double x, double y) : location(new Point(x, y)) {}
+  ~Shape() { delete location; std::cout << "~Shape\n"; } // 1
+  virtual double area() const = 0; // 2
+};
+
+class Square : public Shape {
+private:
+  double* side;
+public:
+  Square(double side, double x, double y) : Shape(x, y),
+  side(new double(side)) {}
+  ~Square() { delete side; std::cout << "~Square\n"; }
+  double area() const { return *side * *side; } // looks weird
+};
+
+int main() {
+  Shape* s = new Square(2.5, 0, 0); // place at origin
+  std::cout << s->area() << '\n';
+  delete s; // 3
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：非虚拟析构函数，这似乎是正确的
+
+注释2：用于多态行为的虚拟方法
+
+注释3：删除对象的基类部分，但不删除派生类部分
+}
+
+此代码的输出为
+
+\begin{shell}
+6.25
+~Shape
+\end{shell}
+
+这表明基类析构函数运行但泄漏了动态 side 值——您的结果可能会有所不同。
+
+\mySamllsection{分析}
+
+main 函数的输出显示，只调用了 Shape 析构函数。尽管这两个类的设计很不合理，但 Square 析构函数未被调用这一事实表明存在内存泄漏。
+
+基类应该至少有一个虚函数，因为只有虚函数才能参与多态行为。否则，继承可能被用于代码重用。没有虚拟析构函数的基类可能看起来设计得当，因为它可以工作。当通过基类指针操作派生对象时，一切都按预期工作。也就是说，它一直工作到对象被销毁。行为变得奇怪，但不太可能被注意到。这种情况完全取决于编译器如何实现此功能；调试和发布版本也可能不同。
+
+通过基类指针销毁派生类可能只会删除定义基类的部分。基类的析构函数将被调用并执行其任务。基类不知道（也不应该知道）应该删除对象的派生类部分。最终结果可能是派生部分成为内存泄漏。这种情况无疑是一个问题，但可能会避免短期运行的程序出现重大问题 - 这是欺骗行为。但是，当派生类具有动态资源（例如数据库连接、文件句柄或其他唯一或受限资源）时，问题更有可能影响操作。
+
+\mySamllsection{解决}
+
+解决方法很简单：始终为具有一个或多个虚函数的基类提供虚析构函数。此外，不要使用没有虚方法的基类或具有虚方法但不是基类的类。构造顺序始终是从继承层次结构中最基类向下到最派生类。相反，销毁顺序是从层次结构中最派生类向上到最基类 — 与构造相反。必须首先构造基类，因为派生类可能依赖于基类知识。这意味着应该首先销毁最派生类。除非使用 virtual 关键字，否则不会发生这种情况。
+
+\filename{清单8.16 带有虚析构函数的基类}
+
+\begin{cpp}
+class Point {
+private:
+  double x;
+  double y;
+public:
+  Point(double x, double y) : x(x), y(y) {}
+};
+
+class Shape {
+private:
+  Point* location;
+public:
+  Shape(double x, double y) : location(new Point(x, y)) {}
+  virtual ~Shape() { delete location; // 1
+  std::cout << "~Shape\n"; }
+  virtual double area() const = 0;
+};
+
+class Square : public Shape {
+private:
+  double* side;
+public:
+  Square(double side, double x, double y) : Shape(x, y),
+    side(new double(side)) {}
+  ~Square() { delete side; std::cout << "~Square\n"; }
+  double area() const { return *side * *side; } // still looks weird
+};
+
+int main() {
+  Shape* s = new Square(2.5, 0, 0); // place at origin
+  std::cout << s->area() << '\n';
+  delete s;
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：添加虚拟关键字；现在，首先调用派生类的析构函数
+}
+
+此执行的输出显示预期的派生类销毁，随后是基类销毁：
+
+\begin{shell}
+6.25
+~Square
+~Shape
+\end{shell}
+
+基类析构函数中添加了 virtual 关键字，结果显示两个析构函数均被调用。这一令人欣慰的事实表明，两个类中的动态分配内存均被正确删除。如果基类和派生类使用任何动态资源（例如堆内存、系统资源句柄或类似实体），请确保它们具有析构函数。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+多态行为需要指针或引用和虚拟函数；值对象（即基类元素）将分割派生部分。
+
+\item
+如果某个类具有虚拟函数，则该类应为基类并从中派生；始终遵循此模式。
+
+\item
+抵制从没有虚拟析构函数的现有类派生类的诱惑（或修复该现有类以进行继承）。
+
+\item
+如果类具有任何虚函数，请始终定义一个虚析构函数，以防止仅破坏基类部分，造成内存泄漏。
+
+\item
+如果类没有虚函数，则不要提供虚析构函数。这遵循了避免使用不打算继承的虚方法的类的建议。
+\end{itemize}
+
+
+
+
+
+
+
+

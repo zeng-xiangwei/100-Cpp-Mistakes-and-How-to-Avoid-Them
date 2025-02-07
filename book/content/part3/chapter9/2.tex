@@ -1,0 +1,156 @@
+此错误主要针对正确性。除非读者理解问题及其解决方案，否则对可读性也会有轻微影响。
+
+许多数据类型表示允许对象重复的概念。例如，std::string 可能包含产品名称，例如 Automobile 类的品牌和型号。在对停车场中的汽车进行建模时，我们可以预期会出现多辆具有相同品牌和型号的汽车；同一辆车出现多次是正常的。
+
+然而，有些数据类型代表着独特的概念。复制它们的想法违反了类不变量。经典 C++ 没有特定于语言的方法来防止复制唯一对象，因此程序员必须维护此属性。
+
+\mySamllsection{问题}
+
+让我们考虑在一个系统中对艺术品进行建模，也许是一个为潜在买家制作目录的系统。每件艺术品都是独一无二的，必须如此处理。清单 9.4 中的代码没有定义复制对象的方法，表面上保留了不变量唯一性属性。最初，该类有一个公共的复制赋值运算符，必须对其进行更正。开发人员（错误地）认为将其移至私有部分将排除创建重复项的可能性。
+
+\filename{清单9.4 为防止复制唯一对象而进行的错误编码}
+
+\begin{cpp}
+class ArtPiece {
+private:
+  int id;
+  std::string description;
+  ArtPiece& operator=(const ArtPiece& o) { // 1
+    this->id = o.id;
+    this->description = o.description;
+    return *this;
+  }
+
+public: // 2
+  ArtPiece(int id, std::string d) : id(id), description(d) {}
+  std::string getDesc() { return description; }
+};
+
+int main() {
+  ArtPiece ml(333, "Mona Lisa");
+  ArtPiece ts(444, "The Scream");
+  std::cout << ml.getDesc() << '\n';
+
+  ArtPiece dup(ml); // 3
+  std::cout << dup.getDesc() << '\n';
+  // dup = ts; // 4
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：已存在的拷贝赋值操作符移到了私有区
+
+注释2：没有编写公共复制构造函数或复制赋值操作符
+
+注释3：这似乎是行不通的
+
+注释4：私有复制赋值操作符会阻止这段代码运行
+}
+
+开发人员认为，随着复制赋值运算符的移动，复制对象的能力将被消除；毕竟，无法调用复制赋值运算符——他们忘记了默认的复制构造函数！开发人员考虑了复制唯一对象的效果，并选择隐藏作为防止这种情况发生的手段。输出是
+
+\begin{shell}
+Mona Lisa
+Mona Lisa
+\end{shell}
+
+艺术界一片混乱！
+
+\mySamllsection{分析}
+
+如果程序员未指定任何内容，编译器会编写默认的复制构造函数和复制赋值运算符。由于复制构造函数未编码，因此 default 版本会创建 dup 对象并生成蒙娜丽莎的副本。复制成功，而不是失败，并且没有伪造的迹象（没有明显违反类不变量的唯一性属性）。这种（草率的）方法存在重大问题。
+
+创建 dup 的代码可以顺利编译和执行，因为编译器提供了默认版本的复制构造函数，确保对每个实例变量进行浅拷贝。但是，在这种情况下，默认行为会产生伪造的副本，而无法区分它们。
+
+程序员的幼稚方法没有考虑到，如果一个类没有程序员定义的复制构造函数，编译器会很乐意免费提供一个默认版本（在本例中为 free，如 free- fall）。必须将类设计为防止任何一种操作编译。可以抑制任何其他类型的不良功能仅仅通过不编码函数即可；这两个函数不属于那种类型。程序员必须明确阻止它们被成功使用。
+
+一种已取得一定成效的方法是显式定义复制构造函数和复制赋值运算符，但将它们设为私有。这在很大程度上解决了问题。但是，如果类中的代码恰好做了一些不合适的事情（复制或赋值），编译器会很乐意遵守，并发生不变性违规（伪造）。
+
+\mySamllsection{解决}
+
+上述方法有部分正确的想法，但需要包含另一个重要方面。缺少的部分是，提供函数体的每个运算符的私有定义都是可执行代码。因此，不应指定方法体。解决方案很简单：声明但不定义这两个操作。下面清单中的代码一举解决了这两个问题。
+
+\filename{清单9.5通过声明默认操作来防止重复}
+
+\begin{cpp}
+class ArtPiece {
+private:
+  int id;
+  std::string description;
+  ArtPiece(const ArtPiece&); // 1
+  ArtPiece& operator=(const ArtPiece&); // 1
+public:
+  ArtPiece(int id, std::string d) : id(id), description(d) {}
+  std::string getDesc() { return description; }
+  void badMethod() { ArtPiece a = *this; } // 2
+};
+int main() {
+  ArtPiece ml(333, "Mona Lisa");
+  ArtPiece ts(444, "The Scream");
+  // ArtPiece dup(ml); // 3
+  // ts = ml; // 3
+  std::cout << ml.getDesc() << '\n';
+  ts.badMethod(); // 4
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：私有且未实现
+
+注释2：基于类的赋值编译时没有警告
+
+注释3：因为操作是私有的，所以不会编译
+
+注释4：这里没有编译错误
+}
+
+这两个重复函数被声明为私有函数，且未定义。客户端中任何试图使用任一操作的代码都将失败，正如预期的那样，保持类不变，因为面向客户端的复制赋值运算符和复制构造函数都不会编译。编译器发现这两个操作都是私有的，并阻止客户端代码使用它。但事情并不顺利 。
+
+注意清单 9.5 中引入了 badMethod 方法。该方法的主体执行了编译器无法阻止的赋值，而在面向客户端的代码中它可以这样做；语法是合法的，但其语义值得怀疑。编译器对代码没有问题，代码编译得很干净；由于没有错误，所以没有发出任何消息来表明发生了一个错误。这句话听起来可能不对，但它是正确的。问题出现在链接器中。链接器尝试在外部代码中找到复制赋值运算符的定义，但找不到。因此，它发出未定义的引用错误。对于独立于链接进行编译的项目来说，这个错误可能更直接。行为可能与预期不同，因此首先防止它发生是最安全的途径。
+
+如果复制构造函数和复制赋值运算符是公共的并且设置为 =delete ，现代 C++ 编译器可以捕获此错误。以下代码清单显示了一个示例 。请注意注释掉的代码；这些错误现在显然是非法的。
+
+\filename{清单9.6 使用delete=防止重复}
+
+\begin{cpp}
+class ArtPiece {
+private:
+  int id;
+  std::string description;
+public:
+  ArtPiece(int id, std::string d) : id(id), description(d) {}
+  ArtPiece(const ArtPiece&) = delete;
+  ArtPiece& operator=(const ArtPiece&) = delete;
+  const std::string& getDesc() const { return description; }
+  //void badMethod() { ArtPiece a = *this; }
+};
+
+int main() {
+  ArtPiece ml(333, "Mona Lisa");
+  ArtPiece ts(444, "The Scream");
+  // ArtPiece dup(ml); // 1
+  // ts = ml; // 1
+  std::cout << ml.getDesc() << '\n';
+  // ts.badMethod(); // 1
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：现代 C++ 可以避免这些错误。做得好！
+}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+请记住，未实现的复制构造函数和复制赋值运算符由编译器默认，这可能会产生意外或不必要的行为。
+
+\item
+确保您知道哪些对象是唯一的，并且不能被复制；如果源实体留空，则可以传输值。
+
+\item
+在成员上使用现代 C++ =delete 来专门删除它，因为这会强制出现编译时错误而不是链接时错误。
+\end{itemize}

@@ -1,0 +1,142 @@
+此错误主要影响正确性和可读性，从而影响性能。正确性的问题在于代码可能无法按预期工作；可读性的问题在于代码看似直观但实际上并非如此。
+
+异常提供了一种通过备用控制路径报告错误的简洁方法，从而大大降低了代码复杂性。记录预期的异常是通过读取所有相关的捕获块来完成的；但是，这种方法还有待改进。一个好主意是通过在异常规范列 表中指定它们来记录函数抛出的异常。看一眼规范列表就应该知道全部情况。
+
+\mySamllsection{问题}
+
+当开发人员编写所有受影响的代码时，异常处理会变得简单。使用库或其他模块时，查看和理解各种困难的能力会大大降低。清单 10.15 中的代码计算向量中一组值的标准偏差。开发人员小心地确保太少的值会引发异常，以防止在 std\_dev 函数中错误计算结果。作为一名细心的开发人员，他们添加了异常规范来记录如果给出的值太少，函数可能会引发 std::invalid\_argument。开发人员确保调用代码可以从异常中恢复，因为程序终止是有问题的。
+
+在正常情况下，此代码按预期工作，但如果没有给出任何值，情况就会变得很糟糕。如果传递给 std\_dev 函数的值太少，预计会抛出异常。然而，开发人员忽略了 arith\_mean 函数是在向量大小测试之前执行的。被调用的函数检测到值太少的问题，并抛出一个异常。然而，尽管开发人员很小心，程序还是突然终止了。
+
+\filename{清单10.15 列出可以抛出的异常}
+
+\begin{cpp}
+double arith_mean(const std::vector<double>& values) {
+  if (values.size() == 0)
+    throw std::domain_error("missing values"); // 1
+  double sum = 0.0;
+  for (int i = 0; i < values.size(); ++i)
+    sum += values[i];
+  return sum/values.size();
+}
+double std_dev(const std::vector<double>& values)
+                throw (std::invalid_argument) { // 2
+  double mean = arith_mean(values);
+  if (values.size() < 2)
+    throw std::invalid_argument("too few values"); // 3
+  double sum = 0.0;
+  for (int i = 0; i < values.size(); ++i)
+    sum += std::pow(values[i] - mean, 2);
+  return std::sqrt(sum / (values.size() - 1));
+}
+
+int main() {
+  std::vector<double> values;
+  values.push_back(3.14159);
+  values.push_back(2.71828);
+  try {
+    std::cout << "standard deviation is " << std_dev(values) << '\n';
+  } catch (...) {
+    std::cout << "exception caught, but we did not crash\n";
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：如果存在的元素太少，则抛出std::domain\_error
+
+注释2：预测可能出现的std::invalid\_argument异常
+
+注释3：如果存在的元素太少，抛出std::invalid\_argument异常
+}
+
+开发人员对异常条件下的行为感到惊讶，并且对为什么主函数的ca tch块无法拯救程序感到困惑。
+
+\mySamllsection{分析}
+
+开发人员试图通过指定异常来控制程序行为，这种做法虽然合理，但并不完善。除非您彻底理解代码，否则在规范列表中指定异常就是一种猜测。如果您猜对了，程序就会按预期运行；如果您猜错了 ，程序就会毫不留情地崩溃。
+
+编译器必须付出一些努力来处理异常规范。在不使用异常规范的程序中，任何抛出的异常都会随着堆栈展开而渗透到代码层次结构中。一旦添加规范，行为就会以非直观的方式发生变化。编译器会添加代码来检查抛出的异常并将其与规范进行匹配。如果匹配，则异常会按预期传播；但是，如果检测到的异常不在规范中，则检测代码会抛出std::unexpected 异常，其默认行为是调用 terminate（后者会调用 abort）。此附加代码会影响性能。
+
+如果开发人员希望将意外异常转换为更易于管理的异常，请编写一个抛出已知异常（标准异常或您自己制造的异常）的函数，并将该转换函数作为 set\_unexpected 函数的参数传递。简而言之，代码如下所示：
+
+\begin{cpp}
+class MyException {};
+void transformException() { throw MyException(); }
+set_unexpected(transformException);
+\end{cpp}
+
+如果使用这种方法，则应在某个 catch 块中捕获生成的 MyException 。这种方法的一个重大缺点是整个程序会将 unexpected 异常转换为MyException，这使得捕获其上下文非常困难。此解决方案是可行的，但其过于笼统是有害的。尝试记录异常会掩盖需要更好处理的问题。
+
+\mySamllsection{解决}
+
+由于不确定是否可以知道所有可能的异常并将其列在异常规范中，因此最彻底和最有帮助的方法是消除规范。消除它们可以消除与对异常的直观理解背道而驰的意外（和不想要的）行为的可能性。库中许多调用的代码无法充分分析潜在异常，因此使用规范列表可能会产生意外行为。
+
+异常规范是一个实验，它已从现代 C++ 中删除。这一事实表明专家们不信任它们的使用。我们可以将此视为一个明确的暗示，采取相应行动并删除所有异常规范。
+
+以下代码显示了此调整。作为替代方案，注释掉的函数头指定了两种可能的异常；但是，在实际系统中可能无法知道可能异常的完整列表。除非管理层或技术领导坚持，否则请避免采用这种方式。
+
+\filename{清单10.16消除异常规范}
+
+\begin{cpp}
+double arith_mean(const std::vector<double>& values) {
+  if (values.size() == 0)
+    throw std::domain_error("missing values");
+  double sum = 0.0;
+  for (int i = 0; i < values.size(); ++i)
+    sum += values[i];
+  return sum/values.size();
+}
+// double std_dev(const std::vector<double>& values) throw (std::invalid_argument, std::domain_error) { // 1
+double std_dev(const std::vector<double>& values) { // 2
+  if (values.size() < 2) // 3
+    throw std::invalid_argument("too few values");
+  double mean = arith_mean(values);
+  double sum = 0.0;
+  for (int i = 0; i < values.size(); ++i)
+    sum += std::pow(values[i] - mean, 2);
+  return std::sqrt(sum / (values.size() - 1));
+}
+
+int main() {
+  std::vector<double> values;
+  values.push_back(3.14159);
+  values.push_back(2.71828);
+  try {
+    std::cout << "standard deviation is " << std_dev(values) << '\n';
+  } catch (...) {
+    std::cout << "exception caught, but we did not crash\n";
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：可选：添加所有发现的异常（这个列表完整吗？）
+
+注释2：完全消除异常规范
+
+注释3：确保在调用任何其他代码之前进行本地验证
+}
+
+虽然异常规范列表是一个好主意（理论上），但意外行为、额外的实施成本以及无法兑现其承诺意味着最好的方法是消除它们。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+如果可能的话，消除异常规范列表。
+
+\item
+了解未包含在异常列表中的抛出异常的意外行为。
+
+\item
+记住使用异常规范的性能影响。
+\end{itemize}
+
+
+
+
+
+

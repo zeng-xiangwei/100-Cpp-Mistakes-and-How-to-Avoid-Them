@@ -1,0 +1,131 @@
+这个错误关注的是正确性和有效性。由于保持类不变性至关重要，因此从失败的构造函数中抛出异常是防止使用部分初始化对象的最佳方法。异常使创建对象的代码更简洁，但更重要的是，任何构造失败都会被发出信号并必须处理。很容易忘记检查返回代码和失败标志或一致地实施其他方案来测试对象的有效性。在这种情况下，开发人员使用异常时花费的开发时间比不使用时少。
+
+\mySamllsection{问题}
+
+除非经过专门设计，否则许多现有代码很少能很好地使用异常。一个值得注意的领域是对象的构造。默认构造函数可能被过度使用，导致某些变量实例初始化不当。糟糕的假设是，构造缺少初始化数据的对象是可以接受的，因为（稍后！）其余的初始化数据将被提供。
+
+这种错误的方法通常使用默认构造函数或采用初始化数据子集的构造函数。当初始化数据缺失时，将重置有效位以指示对象不完整或部分初始化。当提供缺失数据时，将设置有效位，指示已完成初始化。如果始终如一地应用，这种方法是有效的，但可能表明决策和设计不当。以下代码显示了此假设的实际作用。
+
+\filename{清单10.1 部分初始化的类}
+
+\begin{cpp}
+class Person {
+private:
+  std::string name;
+  int age;
+public:
+  Person(const std::string& name) : name(name) {} // 1
+  Person(const std::string& name, int age) : name(name), age(age) {}
+  int getAge() { return age; }
+  const std::string& getName() const { return name; }
+  bool isValid() const { return age > -1; }
+};
+int main() {
+  Person sally("Sally"); // 2
+  std::cout << sally.getName() << " is " << sally.getAge()
+    << " years old\n";
+  Person brian("Brian", -1); // 3
+  std::cout << brian.getName();
+  if (brian.isValid()) // 4
+    std::cout << " is " << brian.getAge() << " years old\n";
+  else
+    std::cout << " is invalid\n";
+  std::cout << brian.getName() << " is " << brian.getAge() <<
+    " years old\n"; // 5
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：部分默认构造函数无法初始化一个实例变量
+
+注释2：使用部分默认构造函数；age未初始化
+
+注释3：实例状态中引入了不良数据
+
+注释4：开发人员记得检查有效位
+
+注释5：开发人员忘了检查有效位
+}
+
+sally 对象已部分初始化，age 实例变量将受制于当前内存中的值，换句话说，其行为未定义。brian 对象已完全初始化，但将坏数据引入实例。在这两种情况下，都需要测试这些对象的有效性。假设sally 的 age 的随机值为正，则该对象看起来有效。如果执行检查，brian 对象将无法通过有效性检查；但是，没有办法强制检查。
+
+\mySamllsection{分析}
+
+使用这些对象的代码无法保证知道这些对象是有效的，并且类不变量 已得到遵守。尽管引入了有效性检查来提供这种保证，但它可能不会被调用——这将是另一个未经过深思熟虑的好主意。
+
+\mySamllsection{解决}
+
+第一道防线是仅在知道所有必要的初始化数据时才创建对象。这一点是过度使用默认构造函数的另一个理由。类不变量依赖于两部分数据，这两者都是必需的。此外，age 实例变量的范围是有界的。除非并且直到这些检查得到验证，否则对象的状态是未知的。
+
+该类应该验证两个参数的值，以确保状态可以得到保证，如果有任何不妥，它应该抛出一个异常，以明确说明无法在有意义的状态。调用代码应始终清楚对象的有效性；类负责确保和执行它。以下代码显示了执行类不变式并传达建立它时的任何失败的改进。
+
+\filename{清单10.2 为构造失败抛出异常}
+
+\begin{cpp}
+class Person {
+private:
+  std::string name;
+  int age;
+  static const std::string& validateName(const std::string& name) { // 1
+    if (name.empty())
+      throw std::invalid_argument("name must not be empty");
+    return name;
+  }
+  static int validateAge(int age) { // 1
+    if (age < 0)
+      throw std::out_of_range("age must be non-negative");
+    return age;
+  }
+public:
+  Person(const std::string& name, int age) :
+    name(validateName(name)), age(validateAge(age)) {} // 2
+  int getAge() const { return age; }
+  const std::string& getName() const { return name; }
+  bool isValid() const { return age > -1; }
+};
+
+int main() {
+  // Person sally("Sally"); // 3
+  Person sally("Sally", 27);
+  std::cout << sally.getName() << " is " << sally.getAge()
+    << " years old\n";
+  Person brian("Brian", -1); // 4
+  std::cout << brian.getName() << " is " << brian.getAge()
+    << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：用于验证参数数据的验证方法
+
+注释2：构造函数负责建立类不变量
+
+注释3：不完整的参数值将无法通过编译
+
+注释4：在构造期间抛出异常；不允许模棱两可
+}
+
+由于删除了该函数，因此无法再使用部分默认构造函数创建 sally 对象。它现在必须提供两个参数值。brian 对象提供两个参数值，但其中一个无效。validateAge 方法确保不使用负值来初始化 age 实例变量。但是，在 brian 的情况下，提供的信息会导致抛出异常。此对象的有效性没有任何歧义。调用者应该提供恢复站点来处理这种情况。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+在所有需要的信息都已知之前，切勿构造对象；如果信息不足，则无法建立类不变量。
+
+\item
+如果构造信息无效或其他故障导致构造函数无法正确完成，则抛出异常。
+
+\item
+预测构造故障；相应地规划和处理它们。
+\end{itemize}
+
+
+
+
+
+
+
+

@@ -1,0 +1,133 @@
+此错误主要针对正确性。其他特性不会受到此错误明显影响。
+
+Inheritance指从现有类中定义新类，从而允许统一处理相关对象的集合。层次结构中的每个类都会向组合的派生类添加一个数据部分。派生类的对象是这些数据部分的组合。Polymorphism 是将这些派生类视为基类但行为与派生类相同的运行时能力。相应的类构造函数、析构函数和运算符必须正确管理层次结构中每个类的各个数据部分。复制赋值运算符的正确操作很容易被忽视。
+
+\mySamllsection{问题}
+
+复合对象（派生类实例）的每个部分都必须正确实现每个相关运算符。构造函数和析构函数经常在此上下文中提及，因为它如果不引用基类构造函数，就很难编写构造函数。应更频繁地提及和理解此上下文中运算符的正确操作。
+
+考虑以下一个人和一个学生之间的继承层次结构。Student 派生自Person，因为学生是人，但学生又不仅仅是人。Student 类的开发人员会小心地实现代码来处理该类中的专业知识，但可能会忽略基类中的类似知识。基类中的实例变量是私有的，派生类无法访问；因此，派生类无法充分复制这些值。
+
+清单 8.13 展示了从一个实例到另一个实例的复制操作。这个例子有些牵强，但请放心，这种类型的操作经常发生在未命名的变量中，例如向量或数组元素，并且没有明显的警告标志，例如将 Thelma 复制到 Louise，如下面的清单所示。
+
+\filename{清单8.13 一个派生类复制它的数据，但忽略它的基类}
+
+\begin{cpp}
+class Person {
+private:
+  std::string name;
+public:
+  Person(const std::string& name) : name(name) {}
+  const std::string& getName() { return name; }
+};
+
+class Student : public Person {
+private:
+  double gpa;
+public:
+  Student(const std::string& name, double gpa) : Person(name), gpa(gpa) {}
+  Student& operator=(const Student& o) {
+    if (this == &o)
+      return *this;
+    gpa = o.gpa; // 1
+    return *this;
+  }
+double getGpa() const { return gpa; }
+};
+
+int main() {
+  Student thelma("Thelma", 3.85);
+  Student louise("Louise", 3.75);
+  louise = thelma;
+  std::cout << thelma.getName() << ' ' << thelma.getGpa() << '\n';
+  std::cout << louise.getName() << ' ' << louise.getGpa() << '\n';
+}
+\end{cpp}
+
+{\footnotesize
+注释1：Student 实例变量被正确复制，但 Person 实例变量则没有
+}
+
+该问题的结果从其输出中可以看出：
+
+\begin{shell}
+Thelma 3.85
+Louise 3.85
+\end{shell}
+
+\mySamllsection{分析}
+
+当我们完成创建 louise 对象时，它会被分配给 thelma 对象。现在，我们有两个 thelma 值，由于对 louise 实例的赋值操作，每个值都与不同的变量名相关联。赋值不会导致编译或运行时问题，因此代码按预期工作。但是，请注意，louise 对象仍然保留其名称 Louise，但使用 Thelma 的 gpa — 对于学生来说，这可能是最好的选择。但对于我们的编程完整性而言，事实并非如此。
+
+派生类定义了复制赋值运算符，以确保参数的 gpa 被复制到自身； 此代码按预期工作。但是，基类中的 name 字段也需要正确复制。它在 Person 中是私有的，因此，Student无法复制它——这一点很容易被忽视。只有从代码中删除复制赋值运算符定义，复制操作才能按预期工作。默认的复制赋值运算符和我们定义的版本之间存在一些不同。
+
+编译器编写的默认复制赋值运算符确保在对派生类的数据字段进行成员级复制之前调用基类复制赋值运算符。这个微小但关键的事实对于正确操作至关重要。由于派生对象是所有基类和派生类的组合，因此当尝试复制或赋值组合的一部分时，它必须确保每个部分都执行了复制或赋值操作。
+
+\mySamllsection{解决}
+
+一旦理解了这个问题，就可以轻松解决。清单 8.14 中更新的代码使赋值操作正确执行。复制赋值运算符确保首先调用基类版本，然后继续其复制行为。复制赋值运算符确保调用其基类复制赋值运算符并将参数作为参数传递，以确保处理层次结构中所有更高级别的实例。对象构造顺序所确立的主题再次体现：基类始终先构造、复制或赋值，然后在派生类中执行相同的操作。
+
+\filename{清单8.14 适当考虑其基类的派生类}
+
+\begin{cpp}
+class Person {
+private:
+  std::string name;
+  public:
+  Person(const std::string& name) : name(name) {}
+  const std::string& getName() { return name; }
+};
+
+class Student : public Person {
+private:
+  double gpa;
+public:
+  Student(const std::string& name, double gpa) : Person(name), gpa(gpa) {}
+  Student& operator=(const Student& o) {
+    if (this == &o)
+      return *this;
+    Person::operator=(o); // 1
+    gpa = o.gpa; // 2
+    return *this;
+  }
+  double getGpa() const { return gpa; }
+};
+
+int main() {
+  Student thelma("Thelma", 3.85);
+  Student louise("Louise", 3.75);
+  louise = thelma;
+  std::cout << thelma.getName() << ' ' << thelma.getGpa() << '\n';
+  std::cout << louise.getName() << ' ' << louise.getGpa() << '\n';
+}
+\end{cpp}
+
+{\footnotesize
+注释1：首先调用基类复制赋值运算符
+
+注释2：随后复制派生类实例变量
+}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+如果在派生类中定义了任何运算符，请确保在执行任何数据移动操作之前，实现包括对等效基类运算符的调用。
+
+\item
+请记住，构造函数和运算符的顺序必须遵循严格的模式，即最基类先执行，派生类最后执行，而析构函数则反转此顺序。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+

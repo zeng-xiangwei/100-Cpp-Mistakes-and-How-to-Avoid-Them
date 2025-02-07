@@ -1,0 +1,117 @@
+这个错误关注的是效率。创建结构或类来保存异构或多个值会分散开发人员对解决问题的注意力。
+
+\mySamllsection{问题}
+
+一个典型的问题是将多个（通常是异构的）数据类型聚合到一个单元中，以便于操作。通常使用 struct 或 class，这需要开发人员创建代码来定义聚合。这种方法已经行之有效多年，但对于普通旧数据 (P OD) 来说，它往往是矫枉过正，主要是当结构仅在少数地方使用时。
+
+清单 3.14 的结果来自开发人员需要对学生的三个属性进行建模—— 姓名、年龄和平均成绩。开发人员还必须定义几个类似的类来承载其他聚合组，增加结构数量并使用不同的数据类型。这种方法的一个明显优势是，可以通过字段名称访问 POD——稍后会详细介绍。
+
+\filename{清单3.14 将简单pod定义为结构}
+
+\begin{cpp}
+struct Student { // 1
+  std::string name;
+  int age;
+  double gpa;
+  Student(const std::string& n, int a, double g) : name(n), age(a), gpa(g) {}
+};
+
+// other well-defined PODs
+struct Employee {};
+struct Teacher {};
+struct Admin{};
+
+int main() {
+  Student s("Susan", 23, 3.85); // 2
+  std::cout << "student " << s.name << ", " << s.age << " years old, carries a "
+            << s.gpa << '\n'; // 3
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：定义简单 POD 的开销 (？？？)
+
+注释2：POD 初始化
+
+注释3：POD 使用
+}
+
+\mySamllsection{分析}
+
+每个聚合都定义一种新的数据类型，并且必须定义每个实例变量及其数据类型。最简单的方法是使用构造函数来初始化实例。通过实例变量名访问每个变量，这是一种自然而有效的方式。但是，类似代码的重复以及编写每个新 POD 的负担使这种方法变得繁琐且容易出错。
+此外，对数据类型的理解会因代码量、定义之间的距离以及类似部分的重复而减弱。
+
+\mySamllsection{解决}
+
+如清单 3.15 所示，添加了 using 关键字以简化数据类型名称的创建及其定义 — 这是基于 C 的 typedef 关键字的现代 C++ 方式。“另请参阅”部分指出了另一个解决该问题的错误。
+
+此代码中的关键是 tuple。std::tuple 模板提供了一种通过枚举其类型来声明具有多个不同类型的实例变量的结构的方法；它们没有用户提供的名称。结构中的这种差异最大限度地减少了命名和编码。实例的初始化与结构版本完全一样，但无需提供构造函数 — 另一种节省时间和混乱的手段。
+最后一个区别是负面的；访问字段不是通过名称而是通过索引。每个实例变量都按规范顺序进行索引，从索引零开始。给定一个索引，std::get 函数模板有助于确定要访问哪个字段；但是，“另请参阅”部分指出了一种更好的访问值的方法，称为 结构化绑定。
+
+\filename{清单3.15 将简单POD定义为元组}
+
+\begin{cpp}
+using Student = std::tuple<std::string, int, double>; // 1
+
+// other well-defined PODs
+// using Employee = std::tuple<...>;
+// using Teacher = std::tuple<...>;
+// using Admin = std::tuple<...>;
+
+int main() {
+  Student s("Susan", 23, 3.85); // 2
+  std::cout << "student " << std::get<0>(s) << ", " << std::get<1>(s)
+      << " years old, carries a " << std::get<2>(s) << '\n'; // 3
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：一种低开销的定义POD的方法
+
+注释2：POD 初始化
+
+注释3：POD 使用
+}
+
+当不需要类的完整语义时，std::tuple 模板提供了一种紧凑且可用的方法来定义数据聚合；这种方法特别适用于 POD。模板可用于进一步概括元组。例如，可以使用此替代方法来定义和使用 Student：
+
+\begin{cpp}
+template <typename T1, typename T2, typename T3>
+using Student = std::tuple<T1, T2, T3>;
+\end{cpp}
+
+它的初始化将是
+
+\begin{cpp}
+Student<std::string, int, double> s("Susan", 23, 3.85);
+\end{cpp}
+
+对字段的访问保持不变。
+
+这里有一个重要的警告：如果 Student 和 Employee 定义相同，则它们是同一类型。任何采用这种 Student 的函数或容器也可以采用Employee — 这不是里氏替换原则，而是一个严重的设计缺陷。请仔细考虑如何使用它们。
+
+关于以不同方式使用元组的最后一点意见是，当函数需要返回多个值时，请考虑使用 std::tuple 模板。此应用程序将是考虑使用 using 关键字的模板的一个很好的理由。输出参数应替换为元组以增强可读性。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+对于简单结构（通常是 POD），使用 std::tuple 来简化编码并方便阅读。
+
+\item
+考虑模板化元组以实现更通用的用途。
+
+\item
+使用元组返回多个值。
+\end{itemize}
+
+
+
+
+
+
+
+
+

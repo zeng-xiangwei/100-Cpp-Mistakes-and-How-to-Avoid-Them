@@ -1,0 +1,240 @@
+正确使用继承对于正确性、可读性和有效性至关重要。如果使用不 当，继承会引入异常，难以阅读和推理，并且需要额外的努力来整理细节。
+
+在面向对象编程的早期，继承被吹捧为解决所有软件工程问题的灵丹妙药。DRY 原则很快被采纳为鼓励继承的典范。教科书赞扬了它的使用，并教导人们代码重用是可以实现的。
+
+主要思想是只在基类（如果您来自其他语言，则为 superclass）中编写一次代码，然后在派生类中重用该代码。这个承诺很诱人，我们中的许多人都上钩了。后来，我们发现我们的课程可以更好地工作。我们不得不编写奇怪的代码，为这个类而不是那个类产生异常。我们需要理解 is-a 关系的概念。
+
+所有的童话故事都包含一些事实，但幻想的细节在现实世界面前似乎黯淡无光。多年来，代码重用的童话故事已经黯淡了许多。教科书仍然在继承的背景下提到代码重用。这种建议是使用继承的最糟糕的理 由。代码重用是继承的一个好处，但它绝不是继承的理由。
+
+\mySamllsection{问题}
+
+如果使用得当，继承是一个好主意，也是一种非常强大的技术。派生类是基类，派生类和基类之间存在一种是关系。这种关系正是 Barbra Liskov 博士在现在著名的 Liskov substitution 中所描述的principle（LSP）。她表示，当需要基类型的实例时，可以用派生类型的实例代替。我们正在研究类是数据类型的概念。
+
+注意：此错误仅讨论公共继承。受保护、私有和虚拟继承完全不同，不应用于 is-a 关系。本书未涉及这些内容。
+在 LSP 中可能需要明确的是，在处理对象集合、一些基类和各种派生类时，我们以特定的方式对待它们。每个实例都被视为基类。记住这句口头禅：“基类知道和做的一切，派生类都知道和做。”当然，这并不意味着基类知道和做的一切都可以直接被派生类访问（私有成员不可访问）。在这种情况下，最好这样说：“基类知道和做的每件非私有的事情，派生类都直接知道和做。”
+
+一个含义是，只有基类接口才能用于处理对象和子对象的集合 — 如果某个行为未在基类上定义，则无法在派生类上调用它。第二个含义是，集合通常必须处理指向对象的指针，而不是对象本身。许多容器按值保存对象，值的大小是固定的。试图将（很可能更大的）派生对象挤进基类大小的空间注定会失望 — 复制过程悄无声息地进行，但对象的派生类部分被切掉，只留下基类部分。
+
+考虑从 Person 类派生出 Student 类的情况，如以下清单所示。Person 类的所有知道（并且做），Student 类知道（并且做）。
+
+\filename{清单7.10 简单的继承层次结构}
+
+\begin{cpp}
+class Person {
+  std::string name;
+  int age;
+};
+
+class Student : public Person {
+  double gpa;
+};
+\end{cpp}
+
+要理解为什么派生类可以替代基类，请研究图 7.1。在左侧，我们看到一个类 Person 的对象，它有两个实例变量：name 和 age。右侧的Student 对象派生自 Person 并添加了一个 gpa 实例变量。Student 的顶部看起来像 Person，正是因为 Student 是 Person。Student 的底部是附加的实例变量。因为 Student 可以被视为 Person 或Student，具体取决于如何访问它，所以它可以表现为多态的。
+
+Josie 是 Person，Sally 也是。如果我们将 Sally 引用为 Person，则有关 Person 的所有内容都是可访问的。只有当我们将 Sally 视为Student 时，底部部分才可访问，因为学生具有 gpa 值。图 7.1 还说明了为什么将 Sally 存储在 Person 元素数组中只有空间容纳基类部分；Student 部分被切掉，Sally 突然变成只有 Person — 对象失去了 其 Student 性。
+
+\myGraphic{0.5}{content/part3/chapter7/images/1.png}{图 7.1 Person 和 Student 对象显示实例变量及其布局}
+
+\mySamllsection{分析}
+
+多态性是将类排列成层次结构的主要原因。唯一的其他原因是重用代码，节省一些按键。然而，这个原因是反面原因；它造成的麻烦和尴尬比它节省的还多。
+
+在以下清单中，基类具有派生类想要重用的功能。但是，派生类无法通过“is-a”关系与基类相关联。此示例旨在展示当类之间没有紧密联系时，尝试通过重用方法来节省一些按键次数时，一些缺陷会逐渐显现出来（通常较晚显现）。
+
+\filename{清单7.11 根据外观关联类}
+
+\begin{cpp}
+class Square {
+private:
+  double side;
+  double offset;
+public:
+  Square(double side) : side(side), offset(0) {}
+  virtual void move(int n) { offset += n*side; } // 1
+  double getOffset() { return offset; }
+  double area() { return side*side; }
+};
+
+class Horse : public Square { // 2
+public:
+  Horse(double height) : Square(height) {}
+};
+
+int main() {
+  std::vector<Square*> squares;
+  squares.push_back(new Square(1));
+  squares.push_back(new Horse(15));
+  for (int i = 0; i < squares.size(); ++i) {
+    squares[i]->move(2);
+    Horse* h = dynamic_cast<Horse*>(squares[i]); // 3
+    if (h) {
+      std::cout << "Horse moved " << h->getOffset()
+        <<" meters ahead\n";
+    } else { // 4
+      std::cout << "Square moved to (" << squares[i]->getOffset()
+        << ", " << squares[i]->getOffset() << ")\n";
+      std::cout << "Square area is " << squares[i]->area() << '\n';
+    }
+  }
+  return 0; // 5
+}
+\end{cpp}
+
+{\footnotesize
+注释1：正方形可以在图形空间中移动
+
+注释2：马可以移动，但应该以不同的方式移动
+
+注释3：强制类型转换可能是一个不好的迹象（代码异味）
+
+注释4：这是一个尴尬的烂摊子；随着更多类的添加，它会变得越来越复杂
+
+注释5：动态对象已泄漏；应该将其删除
+}
+
+首先，当迭代这些相关性较差的类的容器时，必须添加定制处理代码以确保 Horse 实例不会调用现在毫无意义的 area 方法。这种额外的负担迫使程序员将每个派生对象作为特殊情况来处理，从而破坏了相关类容器的顺畅流动。此外，这种特殊处理可能只会添加到一些新开发的代码中。
+
+其次，move 方法表示将方块移动到某个点 n 个单位上方和 n 个单位右侧（如果使用负值，则反之亦然）。但是，对于马来说，getOffset 则意味着完全不同的东西，并且方法名称无法传达其意图。
+
+第三，Horse 对象无法有意义地替代 Square 对象。Horse 实例将同时具有数据字段并继承这三种方法；Horse 对象不能拥有合法区域，也不能像 Square 那样移动。虽然这个例子是高度人为的，但这些关键的批评点对于在使用继承进行代码重用的领域中运行的更 “合理”的代码是有效的。
+
+\mySamllsection{解决}
+
+有两种方法可以解决这个问题。第一种方法是拒绝以这种方式编码。
+仅当派生类与其基类正确相关且在 every 情况下可替换时才使用继承。这种关系的参考点是派生类是否始终可以在需要基类实例的地方替换 - 再次强调，每次都是如此。Substitutability 表示每个数据字段和行 为在基类和派生类的上下文中都是有意义的。
+
+清单 7.12 中的代码通过打破垂直继承层次结构并将其水平展开，更 好地表达了这一点。程序可能需要 Horse 和 Square 对象，但不是直接相关的。每个类都定义了自己的一组实例变量（它知道什么） 和方法（它做什么）。两者都有一个 move 方法，但事实证明这只是偶然的。更恰当的命名方法 getOffset 和 getPosition 可以更 好地沟通每种方法的目的。最后，对象集合被分成不同的容器，这更直观，也更接近现实。
+
+\filename{清单7.12 分离不相关类}
+
+\begin{cpp}
+class Square {
+private:
+  double side;
+  double offset;
+public:
+  Square(double side) : side(side), offset(0) {}
+  void move(int n) { this->offset += n*side; } // 1
+  double getOffset() { return offset; }
+  double area() { return side*side; }
+};
+class Horse {
+  double height;
+  double position;
+public:
+  Horse(double height) : height(height), position(0) {}
+  void move(int offset) { position += offset; } // 2
+  double getPosition() { return position; }
+};
+int main() {
+  std::vector<Square*> squares; // 3
+  squares.push_back(new Square(1));
+  for (int i = 0; i < squares.size(); ++i) {
+    squares[i]->move(2);
+    std::cout << "Square moved to (" << squares[i]->getOffset()
+      << ", " << squares[i]->getOffset() << ")\n";
+    std::cout << "Square area is " << squares[i]->area() << '\n';
+  }
+  std::vector<Horse*> horses; // 4
+  horses.push_back(new Horse(15));
+  for (int i = 0; i < horses.size(); ++i) {
+    horses[i]->move(10);
+    std::cout << "Horse moved " << horses[i]->getPosition()
+    << " meters ahead\n";
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：正方形可以以自己的方式移动
+
+注释2：马可以按照自己的方式移动
+
+注释3：让方格保持在一起
+
+注释4：让马保持在一起
+}
+
+第二种方法使用仅定义纯虚拟函数的基类。Java 等语言提供称为Interfaces 的类状结构，没有实现细节（这在 Java 8 及更高版本中被放宽）。其思想是提供行为（抽象函数）的接口声明，而不提供实现。每个派生的具体类都实现该接口，并且必须为每个抽象方法提供代码主体。使用这种类的最显著优势是，以前不相关的类可以在更抽象的级别上相关联。但是，我们必须非常小心地确保这些类 should 通过这种共同点相关联。
+
+在此示例中，如果问题主要涉及移动对象（假设它在图形绘制程序中），则可能有必要通过每个类实现一个典型的抽象基类并声明一个 move 方法将这两个类关联起来。注意不要在没有模式的地方看到模式；不要因为一些相同的方法或变量名称而“关联”类。关注语义（含义），而不是语法（语法和命名）。
+例如，Square 和 Horse 类可以使用称为 Moveable 的概念相关联。
+
+此概念不同于 C++20 中引入的技术语言功能。Moveable 对象意味着它实现了 move 方法，而 Moveable 对象的容器意味着每个元素都可以移动（但没有其他共同点）。以下代码演示了此概念。
+
+\filename{清单7.13 使用类似接口的类}
+
+\begin{cpp}
+class Moveable { // 1
+public:
+  virtual void move(int) = 0;
+  virtual double getPosition() = 0;
+};
+
+class Square : public Moveable {
+private:
+  double side;
+  double offset;
+public:
+  Square(double side) : side(side), offset(0) {}
+  void move(int n) { this->offset += n*side; } // 2
+  double getPosition() { return offset; }
+  double area() { return side*side; }
+};
+
+class Horse : public Moveable {
+private:
+  double height;
+  double position;
+public:
+  Horse(double height) : height(height), position(0) {}
+  void move(int offset) { position += offset; } // 3
+  double getPosition() { return position; }
+};
+int main() {
+  std::vector<Moveable*> movers; // 4
+  movers.push_back(new Square(1));
+  movers.push_back(new Horse(15));
+  for (int i = 0; i < movers.size(); ++i) {
+    movers[i]->move(2);
+    std::cout << "Mover moved " << movers[i]->getPosition() << " units \n";
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：通过创建抽象方法来声明行为的混合类
+
+注释2：方块可以按自己的方式移动
+
+注释3：马儿可以挡住他们的路
+
+注释4：一组可移动的物体；这些不应该被认为是方块和马
+}
+
+当使用类似接口的类时，确保每个方法对于该类的意图和含义都是有意义的捕获。里氏替换原则在这里的应用与以前一样严格 — — 任何需要基类实例的地方，都可以正确且有意义地替换派生类实例。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+多态性应该是继承的主要动机。
+
+\item
+如果没有多态性，继承的目的就会退化为代码重用。
+
+\item
+代码重用会导致书写和阅读上的尴尬。
+
+\item
+将使用继承的类分开以实现代码重用，并以相关的方式编写方法。
+\end{itemize}
+
+
+
+
+
+

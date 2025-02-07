@@ -1,0 +1,147 @@
+可读性（或缺乏可读性）是本次讨论的主要动机。但是，继承关系实施不当会对正确性产生不利影响，并会影响有效性。
+
+公有继承提供了从现有类创建新类的能力。这些新派生的类必须通过is-a 关系与基类相关。受保护继承和私有继承本质上是不同的，本错误中不讨论它们。当函数具有基类实例的参数（或指向或引用）时，派生类对象将替代并按预期工作。此属性是里氏替换原则。继承向读者传达信息；因此，为了传达正确且有意义的信息，公有派生类实例 必须在所有情况下都可以替代基类实例并且表现得像基类实例。
+
+\mySamllsection{问题}
+
+正如其他地方提到的，一些教科书仍然认为继承是一种共享代码的巧妙方法，可以为开发人员节省一些时间。这种方法听起来像是一种编写更少代码并获得更多好处的有效方法。然而，这个建议会把粗心的开发人员逼入绝境（涂漆的地板将是熔岩）。
+
+公共继承意味着基类是一个通用的概念或概念，它可以通过多种方式进行专门化。例如，考虑一个描述二维多边形的 Shape 类。此外，假设程序需要操作 Circle、Square 和 Triangle 对象。由于所有这些都与 Shapes 相关并且具有典型行为（例如，area 和 perimeter），因此将它们建模为 Shape 类的派生类是有意义的。在这样做之前，我们必须考虑是否存在 Circle、Square 或 Triangle 对象无法满足 is-a 关系的情况。在这种情况下，答案是否定的，但有些情况远没有那么清晰或设计得那么干净。
+
+相反，考虑这样一种情况：我们有一个 Bird 类，并希望从中派生出一个 Ostrich 类，因为鸵鸟肯定是鸟类。这种继承似乎满足了 is-a 属性；然而，这里隐藏着一个问题。我们直觉地认为鸟类是会飞的动物，但鸵鸟不是飞行者。直觉可能导致我们犯错误。要解决的问题决定了类之间的适当关系；有时，必须最小化或忽略自然关系。
+
+回到 Shape 示例，继承（尤其是公共继承）最令人信服的论据之一是程序通常必须以通用方式处理相关对象的集合。基类接口函数指定通用行为——即为什么它是基类。派生类可以重写这些函数以提供专门的行为。如果问题不需要处理相关对象的集合，则可能不需要继承层次结构。
+
+\mySamllsection{分析}
+
+开发人员尝试使用继承来关联几何形状，因为以通用方式处理各种类似乎是合理的。因此，他们认为将使用具有通用功能的基类，而派生类可以根据实例的实际类型专门化行为。由于矩形和正方形非常相似，因此从矩形派生正方形并强制其高度和宽度之间建立更严格的关系是一个好主意。
+
+Square 类是为了共享来自 Rectangle 类的代码而开发的，这保证了 有效性，即使可读性略有下降。但是，共享代码的愿望（可以理解为节省一些击键次数的愿望）很快就在现实的岩石上搁浅。Square 似乎是 Rectangle 的一个特例，直到人们意识到，高度和宽度不能独立变化的矩形不是矩形——它只是具有高度和宽度，而这并没有定义一个真正的矩形。虽然矩形的高度和宽度可以具有相同的值，但这种罕见性并不能证明将 Square 设计为 Rectangle 的一个特例是合理的。矩形必须保持具有独立高度和宽度属性的能力。这种独立性是Rectangle 类对每个实例不变量的一部分（如果您不同意，请与几何学家争论）。
+
+\filename{清单7.16 不正确的继承似乎节省了编码工作}
+
+\begin{cpp}
+class Rectangle {
+private:
+  double height;
+  double width;
+public:
+  Rectangle(double h, double w) : height(h), width(w) {}
+  double getHeight() { return height; }
+  void setHeight(double h) { height = h; }
+  double getWidth() { return width; }
+  void setWidth(double w) { width = w; }
+  virtual void validate() { assert(height >= 0 && width >= 0); }
+};
+
+class Square : public Rectangle { // 1
+public:
+  Square(double s) : Rectangle(s, s) {}
+  void validate() override {
+    Rectangle::validate();
+    assert(getHeight() == getWidth());
+  }
+};
+
+int main() {
+  std::vector<Rectangle*> shapes { new Rectangle(3, 4),
+      new Square(2) };
+  for (auto shape : shapes) {
+    // guarantee different lengths
+    shape->setHeight(shape->getWidth() + 1); // 2
+    shape->validate();
+  }
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：尝试保存一些击键操作会导致出现此派生
+
+注释2：Square 实例 将具有不同的高度和宽度值！
+}
+
+虽然此代码正常运行期间不会出现任何问题，但 validate 函数暴露了问题。Square 实例必须具有相等的高度和宽度（根据定义），但Rectangle 实例必须可以自由地具有不同的大小。当测试类不变量时，问题就暴露出来了 — Square 不是Rectangle（反之亦然），即使他们可能直觉地“感觉”是这样。
+
+\mySamllsection{解决}
+
+清单 7.17 展示了继承的良好用法。每个派生类在需要时都可以像Shape（主函数中的循环）一样工作。每个派生类都通过继承与其他派生类相关，但代表不同的想法。每个类都可以验证其类不变量 ，最后，每个派生类都不会偏离基类的接口。Liskov 博士会感到自豪。
+
+这种方法不是从 Rectangle 开始，而是从一个抽象基类开始（理想情况下，每个函数都是纯函数；至少有一个必须是纯函数），该基类定义所有派生类的行为。然后，意识到矩形和正方形没有从基类派生的“is-a”关系。Rectangle 和 Square 类是兄弟关系，而不是错误的父子关系。每个类都可以强制执行其对边长的约束，而不会影响其他类。想象一下将 Triangle 类添加到这个组合中，它将具有更多不同的约束。将类添加到正确排序的继承层次结构不会导致令人头疼和黑客式的解决方法。
+
+\filename{清单7.17 将要点抽象为基类}
+
+\begin{cpp}
+class Shape { // 1
+public:
+  virtual double area() = 0;
+  virtual double perimeter() = 0;
+  virtual void validate() = 0;
+};
+
+class Rectangle : public Shape { // 2
+private:
+  double height;
+  double width;
+public:
+  Rectangle(double h, double w) : height(h), width(w) {}
+  double area() override { return height * width; }
+  double perimeter() override { return (height + width) * 2; }
+  void validate() override { assert(height >= 0 && width >= 0); }
+};
+
+class Square : public Shape { // 3
+private:
+  double side;
+public:
+  Square(double s) : side(s) {}
+  double area() override { return side * side; }
+  double perimeter() override { return side * 4; }
+  void validate() override { assert(side >= 0); }
+};
+
+int main() {
+  std::vector<Shape*> shapes { new Square(2), new Rectangle(3, 4) };
+  for (auto shape : shapes)
+    hape->validate();
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：抽象基类仅定义行为
+
+注释2：此类以其特定的方式实现行为
+
+注释3：此类以其惯用的方式实现行为，与其他类不同
+}
+
+节省一些击键次数来共享代码是一种危险的诱惑，它承诺了很多，但最终却带来了灾难。只有当派生类是基类，因此在 every 情况下可以替代基类时，才能适当地维护公共继承关系。在许多实际层次结构中，一些代码在派生类和基类之间共享，从而导致其重用，从而提高效率。请记住，代码重用（包括节省击键次数）是继承的 benefit，而不是继承的 reason。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+代码共享（重用）是公共继承的一个好处，但绝不是其原因。
+
+\item
+仅当派生类在每种情况下都可以正确替代基类实例，并且为每个基类行为都具有有意义的定义函数时，才使用公共继承。
+
+\item
+如果现实世界中的行为不需要在基类中建模，请避免实现该行为的诱惑，即使直觉表明应该对其进行建模。删除所有当前不需要的行为 — 这是 you ain’t gonna need it (YAGNI) 原则的实际应用。
+
+\item
+类应该通过继承来关联，因为它们是相关实体，并且用于集合中，其中每个实例都像基类对象一样运行，也许具有其行为的一些特殊化。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+

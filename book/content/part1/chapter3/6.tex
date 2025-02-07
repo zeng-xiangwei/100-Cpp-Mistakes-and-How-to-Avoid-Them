@@ -1,0 +1,98 @@
+这个错误主要针对性能。向容器中添加大型或复杂元素可能会比必要的成本更高。
+
+\mySamllsection{问题}
+
+在管理对象集合时，应优先使用诸如向量之类的容器。通常，创建对象并将其复制到容器，如清单 3.12 所示。创建对象需要花费一个构造函数，将其内容复制到容器的元素中需要花费另一个；如果使用复制赋值运算符，它仍然需要大约相当于一个构造函数调用。临时变量可能很昂贵，但这是无法避免的。使用标准模板容器需要这两个步骤。
+
+放置旨在在特定内存位置创建对象。局部变量分配在运行时堆栈上； 动态创建的实体分配在堆上。程序员不会影响这些变量的位置，只需确保它们存在。另一方面，放置让开发人员指定创建对象的位置。
+
+以下代码演示了创建实体并将其添加到向量的典型模式。通常，创建实体时会耗费一次构造函数调用。将实体添加到向量时，向量会将其复制到其元素中，从而耗费另一次构造函数调用。
+
+\filename{清单3.12 创建和添加元素到容器}
+
+\begin{cpp}
+class Resource {
+private:
+  std::string name;
+  int instance;
+  static int handle;
+public:
+  Resource(const std::string& n) : name(n), instance(++handle) {}
+  int id() const { return instance; }
+};
+int Resource::handle = 0;
+
+int main() {
+  std::vector<Resource> resources;
+  resources.push_back(Resource("resource 1")); // 1
+  resources.push_back(Resource("resource 2"));
+  for (int i = 0; i < resources.size(); ++i)
+    std::cout << resources[i].id() << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：创建一个临时变量，然后将其复制到 vector 的元素中
+}
+
+\mySamllsection{分析}
+
+创建 Resource 对象需要调用构造函数。要将实体添加到向量，容器 必须进行复制或赋值，以将源对象的内容传输到目标容器元素。这种方法是实现此功能的唯一方法。然而，将创建实体的成本增加一倍似乎是错误的。哦，好吧，这就是生活。
+
+\mySamllsection{解决}
+
+现代 C++ 稍微改变了规则，以避免两步将对象插入容器的成本过高，这在某些情况下是正确的。如清单 3.12 所示，实例的创建只是为了 插入容器；否则不会使用。在这种情况下，可以直接在容器的元素中构造对象，而不是复制到其中，如清单 3.13 所示。放置使用单个构造函数在向量元素的位置创建实体。这种技术减少了一个构造函数或赋值调用，从而提高了性能。还值得注意的是，定义移动构造函数和移动赋值运算符允许将不可复制的对象放入容器中。
+
+\filename{清单3.13 直接在容器中创建元素}
+
+\begin{cpp}
+class Resource {
+private:
+  std::string name;
+  int instance;
+  static int handle;
+public:
+  Resource(const std::string& n) : name(n), instance(++handle) {}
+  int id() const { return instance; }
+};
+int Resource::handle = 0;
+
+int main() {
+  std::vector<Resource> resources;
+  resources.emplace_back("resource 1"); // 1
+  resources.emplace_back("resource 2");
+  for (int i = 0; i < resources.size(); ++i)
+    std::cout << resources[i].id() << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：在 vector 元素中创建一个对象
+}
+
+并非每个类都可以使用这种技术。如果对象不可复制或不可分配，则编译器在编译代码时会大声抱怨。但是，如果这些对象定义了移动语义，则编译器会发出呼噜声。容器中的对象可能必须在容器管理期间移动或复制。例如，如果向量必须增长，则必须将前一个向量的元素复制到新向量中。因此，放置仅适用于某些数据类型。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+当对象不独立于容器使用时，请考虑使用放置。
+
+\item
+请记住，指针容器（最好是智能指针容器！）可能比值容器更可取。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,121 @@
+这种错误会影响效率和可读性，在某些情况下还会影响正确性。格式化输出是一种艺术形式。与 C++ 笨拙的方法相比，C 风格的格式化具有一些明显的优势，这种情况很少见。
+
+\mySamllsection{问题}
+
+C 为细粒度的输出文本格式化提供了一种有用但危险的解决方案。
+printf 系列函数提供了一个格式说明符，其中包含任何可读文本和用于格式化变量的嵌入说明。说明符使用特殊字符来表示变量的插入位置，后跟变量或表达式的列表。但是，当格式说明符变量占位符与变量类型不匹配时，就会出现问题。编译器不会检查以确保类型与说明符匹配，也不会检查变量的数量是否等于说明符的数量。换句话说，正确的行为很难实现，而未定义的行为总是令人惊讶。
+
+假设我们正在为一所学校建模。此示例中一个基本数据类型是Student。自然，一旦我们有了学生，我们就想知道他们的姓名、年龄和 GPA\footnote{GPA通常代表“Grade Point Average”，即平均成绩点数。它是一种用来衡量学生学术表现的标准化计算方法，广泛应用于教育机构中，特别是在高等教育里用于评估学生的整体学业成就。GPA通过将每门课程的成绩转换为一个数值（通常是4.0或5.0为满分的尺度），然后根据各课程的学分加权平均计算得出。这种方法使得不同学科和课程之间的成绩具有可比性。在不同的国家和地区，以及不同的教育系统中，GPA的具体计算方式可能有所不同。}。要打印出这些，格式说明符应包含三个占位符，每个属性一个。代码必须确保占位符针对属性的数据类型正确定义，并且参数的顺序正确。以下代码演示了一个干净、没有任何奇怪的示例。大多数开发人员都非常熟悉这种方法。
+
+\filename{清单4.5 使用sprintf实现细粒度的格式化功能}
+
+\begin{cpp}
+struct Student {
+  std::string name;
+  int age;
+  double gpa;
+  Student(const std::string& n, int a, double g) : name(n), age(a), gpa(g) {}
+};
+
+int main() {
+  Student dinah("Dinah", 26, 3.3);
+  char buffer[256];
+  sprintf(buffer, "%s is a student aged %d carrying a gpa of %.2f",
+    dinah.name.c_str(), dinah.age, dinah.gpa); ❶
+  std::cout << buffer << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：格式易于理解（但存在 sprintf 的所有危险）
+}
+
+\mySamllsection{分析}
+
+虽然此代码写得正确，但在维护会话期间交换一些格式说明符或变量 会导致一些令人惊讶的行为（再次，未定义）。几乎任何变体都可以干净地编译，这是一个危险信号。一个麻烦的问题是 \%s 说明符需要char*，而不是 std::string。修复它很简单，但是还有一件事需要解决，那就是将焦点从问题上移开，重新转移到家务上。
+经典 C++ 为我们提供了 std::stringstream 模板，该模板与operator<< 配合使用，可以非常干净地完成大多数输出（主要是将数值转换为字符串值）。另一种错误在许多情况下建议使用此解决方案；但是，当格式变得更加复杂时，字符串流会变得过于笨拙。
+
+以下代码提供了解决此问题的方法，但令人怀疑的是它读起来是否更 清楚——也许更糟糕。它最重要的好处是，不会因错误指定变量而导致未定义的行为；无论使用哪种数据类型，底层字符流都会正确格式化。
+
+让我们添加一个新要求：学生的 GPA 必须以这样的方式格式化：它始终有一个前导数字、一个小数点和两个尾随数字 - 没有人会吹嘘说“ 我的 GPA 是 3.8”，而实际上他们的 GPA 是 3.85。此外，对于报告，GPA 需要有两位尾随数字以保持一致性和列对齐。学校管理部门坚持这一要求；他们不想手动对齐 GPA 4 和 3.85 - 他们想要 4.00 和 3.85。
+
+因此，必须在 GPA 4 上添加两个尾随零，并且还需要一个尾随零以确保 GPA 3.5 输出为 3.50。如下面的代码所示，指定该要求比在代码中实现更直接。让 gpa 变量正确地用尾随零填充是一项繁琐的工作，解决方案需要一些令人沮丧的研究。它并不像看起来那么明显。
+
+\filename{清单4.6 使用stringstream实现细粒度的格式化功能}
+
+\begin{cpp}
+struct Student {
+  std::string name;
+  int age;
+  double gpa;
+  Student(const std::string& n, int a, double g) : name(n), age(a), gpa(g) {}
+};
+
+int main() {
+  Student dinah("Dinah", 26, 3.3);
+  std::stringstream str;
+  str << dinah.gpa;
+  std::string gpa_str(str.str());
+  str.str("");
+  str << dinah.name << " is a student aged " << dinah.age << " carrying a gpa of "
+      << gpa_str << std::setw(4 - gpa_str.size()) << std::setfill('0') << ""; // 1
+  std::cout << str.str() << '\n';
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：格式复杂，收效甚微
+}
+
+\mySamllsection{解决}
+
+现代 C++ 提供了一个巧妙的解决方案，它将 printf 系列函数的所有易于指定性与字符串流的类型安全性相结合。清单 4.7 演示了与printf 系列函数相同的形式，即使用 {} 作为占位符，并在格式说明符后使用变量或表达式列表。使用这种方法的好处是输出表现良好，变量的位置也很突出。然而，更好的是，编译器会找出数据类型并自动转换为字符串，并且具有类型安全性。微调变量输出的能力让人想起 C 风格的方法，但使用方式更统一。不可否认，需要进行一些实验才能掌握这些符号及其交互，但并不难。结果是输出格式简单易读，不存在类型不匹配问题。现在以简单的方式满足了两位尾随数字的要求。学校对前导数字、小数点和两位尾随数字的要求由列宽 (4) 和填充字符 (0) 指定。因此，GPA 为 4 将输出为 4.00 ；GPA 为 3.5 将输出为 3.50；GPA 为 3.85 将输出为 3.85。在所有情况下，列都一致对齐并根据需要进行填充。
+
+注意：format 标头的 std::format 功能部分在有限的编译器上可用。C++20 标准定义了该功能，但一些编译器仍需要实现它。我必须下载 Ubuntu 23.10 并安装其 GCC 编译器套件（版本 13+）才能获得此功能。Clang 和 MSVC 已经实现了它，所以你可能很幸运。
+
+\filename{清单4.7 使用std::format实现细粒度格式化功能}
+
+\begin{cpp}
+struct Student {
+  std::string name;
+  int age;
+  double gpa;
+  Student(const std::string& n, int a, double g) : name(n), age(a), gpa(g) {}
+};
+
+int main() {
+  Student dinah("Dinah", 26, 3.3);
+  std::cout << std::format("{} is a student aged {} carrying a gpa of {:0^4}", dinah.name, dinah.age, dinah.gpa) << '\n'; // 1
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：具有类型安全行为的类似 sprintf 的功能
+}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+使用 std::format 可获得 printf 样式函数的优势，而不会出现它们引入的隐蔽问题。
+
+\item
+字符串流比 printf 样式函数更安全，但它们也使细粒度格式化更加尴尬。
+
+\item
+某些编译器尚未实现std::format 功能；请检查您的编译器是否实现了。
+
+\item
+C++23 提供了 std::print 和 std::println 来简化编码输出语句；它与使用类似形式的语言（例如 Java 和 Python）一致。
+\end{itemize}
+
+
+
+
+
+
+
+

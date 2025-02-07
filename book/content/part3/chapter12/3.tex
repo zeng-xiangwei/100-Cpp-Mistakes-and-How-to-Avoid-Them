@@ -1,0 +1,94 @@
+此错误会影响正确性。指针经常用于管理动态资源；删除它们对于正常运行至关重要。通过指针访问已删除的资源通常是可行的，但行为尚未定义。
+
+\mySamllsection{问题}
+
+开发人员面临着许多通过原始指针管理动态资源的情况。许多现有代码都充满了这些情况。现代 C++ 使用智能指针解决了这个问题。在没有智能指针的情况下，开发人员必须小心管理动态资源。资源管理通常可以正确完成，并且不会遇到未定义的行为。然而，存在几种情况，在删除资源后访问资源，因为代码很复杂，删除需要显而易见，但事实并非如此。当从异常中恢复的代码错误处理资源时，就会发生这种情况。
+
+就我个人而言，我曾经参与的一个项目就出现了 12 次此问题。静态代码分析器发现了这些情况，但开发人员或维护人员却没有发现。以下代码是一个非常简化的案例，说明了这个问题。
+
+\filename{清单12.5 指针删除后访问的动态资源}
+
+\begin{cpp}
+class Person {
+private:
+  std::string name;
+  int age;
+public:
+  Person(const std::string& name, int age) : name(name), age(age) {}
+  const std::string& getName() { return name; }
+  int getAge() { return age; }
+};
+
+int main() {
+  Person* anne = new Person("Annette", 28);
+  if (anne) // 1
+    std::cout << anne->getName() << " is " << anne->getAge()
+      << " years old\n";
+  delete anne;
+  if (anne) // 2
+    std::cout << anne->getName() << " is " << anne->getAge()
+      << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：一个有效的测试，确保对象已被创建
+
+注释2：一个看似有效的测试；对象已被销毁且可能被访问。
+}
+
+\mySamllsection{分析}
+
+创建动态资源，测试其有效性，处理并删除。问题出现在删除之后，其中测试指针的有效性并错误地用于访问资源。不同的编译器和系统的组合对此代码的反应不同，但在每种情况下，任何通过已删除指针访问资源的尝试都需要纠正。在最好的情况下，程序崩溃，阻止进一步访问。这种未定义行为的情况可能看起来有效，但却是危险的错误。
+
+\mySamllsection{解决}
+
+解决这个问题最简单的方法是删除指针后将其置空。如果删除操作是在作用域的末尾，则可以忽略此建议，但一般情况下最好这样做。通过空指针访问比成功访问删除了资源。空指针访问导致的崩溃是编程问题的大胆陈述。以下代码显示了这一微小的更改，它产生了显著的效果。
+
+\filename{清单12.6 指针为空以防止删除后的访问}
+
+\begin{cpp}
+class Person {
+private:
+  std::string name;
+  int age;
+public:
+  Person(const std::string& name, int age) : name(name), age(age) {}
+  const std::string& getName() { return name; }
+  int getAge() { return age; }
+};
+int main() {
+  Person* anne = new Person("Annette", 28);
+  if (anne)
+    std::cout << anne->getName() << " is " << anne->getAge() << " years old\n";
+  delete anne;
+  anne = NULL; // 1
+  if (anne) // 2
+    std::cout << anne->getName() << " is " << anne->getAge() << " years old\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：将已删除的指针清零
+
+注释2：阻止通过已删除的指针进行访问的测试
+}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+始终将已删除资源的指针清空；在经典 C++ 中使用 0，在现代C++ 中使用 nullptr。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+

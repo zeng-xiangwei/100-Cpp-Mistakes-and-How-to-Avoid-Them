@@ -1,0 +1,87 @@
+根据读者的不同，这种错误会对效率产生积极影响，但在某些情况下可能会对可读性产生负面影响。for 循环使用语句范围的初始化，但从历史上看，if 语句不能这样做。
+
+\mySamllsection{问题}
+
+需要搜索一个值的容器以查找键值。从历史上看，会创建一个索引循环并用于索引每个值，直到找到键或耗尽容器。最好使用标准模板库中提供的算法。以下代码显示了一种典型的方法。预计需要编写或使用一个函数来搜索并返回一个布尔值，指示是否找到；这可以在条件中完成。if 语句使用返回的值在两个选项之间进行选择。在这种情况下，不会返回布尔值，但会返回迭代器。需要测试迭代器以确定它是否有效。
+
+\filename{列表 3.1 一个典型的基于索引的关键字搜索}
+
+\begin{cpp}
+int main() {
+  std::vector<int> values;
+  for (int i = 0; i < 10; ++i)
+    values.push_back(i*2);
+  int key = 4;
+  std::vector<int>::iterator it =
+  std::find(values.begin(), values.end(), key); // 1
+  if (it != values.end()) // 2
+    std::cout << key << " was found\n";
+  else
+    std::cout << key << " was not found\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：确定是否找到了键
+
+注释2：测试迭代器以确定正确的行为
+}
+
+\mySamllsection{分析}
+
+设置搜索、搜索本身以及处理搜索返回结果所需的代码冗长且包含大量关键字和结构。虽然所有这些都是必需的，但可以更方便。感觉就像用 C 语言编写代码（除了方便的vector！）。
+
+\mySamllsection{解决}
+
+现代 C++ 增强了 if 语句以允许初始化，将任何变量限制在与 for 语句非常相似的语句中。此功能称为带初始化器的 if 语句。它很重要，因为它需要更少的代码行，并且不会引入可能在函数中意外重用的变量。此外，逻辑包含在条件中，使读者能够更清楚地在上下文中看到它。
+
+以下代码演示了如何在初始化程序中查找键值。此代码进一步演示了 如何使用标准模板库算法进行搜索。迭代器变量在分号之前声明和初始化 - 这是初始化程序部分。分号后面的条件代码检测迭代器是否引用结尾（未找到键）；如果没有，则找到键值。条件值决定了语句其余部分所采用的执行路径。
+
+使用带有初始化器的 if 语句比传统的 if 语句更紧凑、更具表现力。在使用某些函数式语言时，它们也是温和的过渡。
+
+\filename{列表 3.2 使用带有初始化器的 if 语句来搜索关键字值}
+
+\begin{cpp}
+int main() {
+  std::vector<int> values;
+  for (int i = 0; i < 10; ++i)
+    values.push_back(i*2);
+  int key = 4;
+  if (auto it = std::find(values.begin(),
+        values.end(),key); it != values.end()) // 1
+    std::cout << key << " was found\n";
+  else
+    std::cout << key << " was not found\n";
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：初始化迭代器并判断是否找到键
+}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+使用带有初始化程序的 if 语句来减少设置决策所需的代码行数。
+
+\item
+请记住，变量应仅在其使用范围内，而不能超出该范围；带有初始化程序的 if 语句的显著好处是限制变量的范围，这始终是一件好事。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,175 @@
+这个错误过于注重正确性而忽视了有效性。许多编程教科书延续了一种古老而熟悉的反模式。在解释如何构建类时，作者经常建议为每个实例变量提供一个访问器和修改器。在面向对象编程的早期，这被认为是一种很好的做法。当前的教科书作者倾向于将这种做法延续到他们的书中。然而，这种做法往往会使类不变量失效；我们需要一种更 好的方法。
+
+\mySamllsection{问题}
+
+让我们考虑一个具有单个实例变量 radius 的 Circle 类，如以下清单所示。构造函数初始化变量，访问器返回其副本，而修改器修改它。
+
+\filename{清单8.3 一个带有简单的非验证mutator的类}
+
+\begin{cpp}
+class Circle {
+private:
+  double radius;
+public:
+  Circle() : radius(1) {}
+  Circle(double radius) : radius(radius) {}
+  double getRadius() { return radius; }
+  void setRadius(double radius) { this->radius = radius; } // 1
+};
+
+int main() {
+  Circle c1(2);
+  std::cout << c1.getRadius() << '\n';
+  c1.setRadius(-1);
+  std::cout << c1.getRadius() << '\n';
+}
+\end{cpp}
+
+{\footnotesize
+注释1：由于没有验证检查，值的范围不受限制
+}
+
+根据教科书的方法，这是正确的设计；但是，存在三个重大问题：
+
+\begin{itemize}
+\item
+未经验证的输入值
+
+\item
+坚持所有实例变量都是可变的
+
+\item
+变量器和构造函数之间的重复知识
+\end{itemize}
+
+遗留代码中充满了这种模式。了解这些问题将有助于确定何时何地改进代码。
+
+琐碎的变量器允许对实例变量进行无限制的修改，从而显著影响正确性。客户端不应负责了解变量的正确值范围。类必须保持类的这一部分不变，并提醒客户端注意不正确的值。引入无关的方法可能会影响可读性，从而掩盖重要的方法。使实例变量可变可能会影响正确性。某些类在构造后不应更改其实例变量。
+
+坚持要求开发人员编写不必要的方法并引入破坏类不变性的代码会影响有效性。有效值范围的知识通常在构造函数和变量之间重复，从而为分歧创造了机会。
+
+有效的编码试图在一个地方消除和隔离这些知识重复。
+
+\mySamllsection{分析}
+
+虽然琐碎的访问器会分散注意力但相对无害，但琐碎的修改器可能很危险。修改器负责维护构造函数建立的类不变量。任何错误的值引入类都会导致实例不一致，并可能导致未定义的行为。因此，修改器必须验证任何候选输入值的正确性。
+
+此外，实例变量可能不需要修改。虽然我们的直觉可能倾向于改变任何实例变量，但这条路比看上去更曲折。在编写变量之前，必须采取两个基本步骤。首先，确定实例变量是否应可变。其次，确定合法值的范围。
+
+在许多情况下，第一个问题的答案是否定的。如果是这样，就没有理 由编写一个变量器；这样的变量器是危险的和多余的。开发人员应该确定半径在 Circle 类中是否正确可变。在这种情况下，不太可能； 如果需要具有不同半径的圆，客户端应该创建一个新实例。
+
+对于任何剩余的变量，请仔细考虑变量的适当值范围。在将参数值分配给实例变量之前，编写验证代码以确保满足这些界限。考虑如何解决超出范围的参数值问题。理想情况下，当值无效。这通常是最好的方法，除非项目领导层已确定不应抛出异常。另一种选择是忽略无效参数值而不执行任何操作；但是，当构造函数调用变量来设置初始值时，这种方法不起作用。
+
+\mySamllsection{解决}
+
+以下代码展示了一种更好但并不理想的方法。它试图通过确保构造函数和变量在客户端传递无效值时抛出异常来解决验证问题。它没有解决可变性或重复问题。
+
+\filename{清单8.4 一个具有验证但知识重复的类}
+
+\begin{cpp}
+class Circle {
+private:
+  double radius;
+public:
+  Circle() : radius(1) {}
+  Circle(double radius) {
+    if (radius < 0) // 1
+      throw std::invalid_argument("radius is negative");
+    this->radius = radius;
+  }
+  double getRadius() const { return radius; }
+  void setRadius(double radius) {
+    if (radius < 0) // 1
+      throw std::invalid_argument("radius is negative");
+    this->radius = radius;
+  }
+};
+int main() {
+  Circle c1(2);
+  std::cout << c1.getRadius() << '\n';
+  c1.setRadius(-1);
+  std::cout << c1.getRadius() << '\n';
+}
+\end{cpp}
+
+{\footnotesize
+注释1：重复了解有效值
+}
+
+通常，构造函数和修改器有共同的代码。构造函数负责建立类不变量 ，包括初始化实例变量（当前未初始化）的值。修改器负责修改实例 变量（现在已初始化）的值。可以通过让构造函数调用修改器来消除这种重复。由于两个地方都必须保持类不变量，因此知识重复是不可避免的。误读“不要重复自己”（DRY）原则可能会导致人们关注代码重复；开发人员应该关注知识重复。范围检查代码应放在修改器中，构造函数应调用修改器。
+
+以下代码解决了前面讨论的三个问题（未验证的参数值、不加区分的可变性和重复知识），并以最小的努力解决了每个问题。
+
+\filename{清单8.5 一个具有验证和单一知识源的类}
+
+\begin{cpp}
+class Circle {
+private:
+  double radius;
+  static double validateRadius(double radius) { // 1
+    if (radius < 0)
+      throw std::invalid_argument("radius is negative");
+    return radius;
+  }
+public:
+  Circle() : radius(1) {}
+  Circle(double radius) : radius(validateRadius(
+    radius)) {} // 2
+  double getRadius() const { return radius; }
+  void setRadius(double r) { radius =
+  validateRadius(r); } // 3
+};
+
+int main() {
+  Circle c1(2);
+  std::cout << c1.getRadius() << '\n';
+  Circle c2(-1); // 4
+  std::cout << c2.getRadius() << '\n';
+}
+\end{cpp}
+
+{\footnotesize
+注释1：验证知识的单一来源
+
+注释2：代码依赖于知识来源
+
+注释3：代码依赖于知识来源；如果需要不变性，请删除此方法
+
+注释4：这会引发异常，提醒开发人员注意问题
+}
+
+私有的 validateRadius 方法隔离了对适当半径值的知识，构造函数通过引用此方法初始化实例变量，并分别实例化具有不同半径的圆。每个不可变的实例变量必须没有变量；消除任何现有的变量。完成此步骤是一种练习，可以让您的思维摆脱混乱，并让您的代码免于不必要的维护成本。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+使尽可能多的实例变量不可变，并消除它们的变量。
+
+\item
+验证每个输入参数以确保其值在类不变量定义的范围内。
+
+\item
+如果可能，抛出无效值的异常；否则，忽略无效值。让构造函数和变量调用一个通用的验证方法，将知识隔离到一个地方。
+
+\item
+确保每个实例 变量都初始化为有意义的值。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

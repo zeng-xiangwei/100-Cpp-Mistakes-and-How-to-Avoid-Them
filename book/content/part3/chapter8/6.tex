@@ -1,0 +1,164 @@
+此错误主要针对正确性，其他特性不受其影响。典型的操作是将一个变量的值赋给另一个变量，或将一个对象赋给同一类型的另一个对象。此操作的代码看起来很简单，但除非理解清楚，否则某些隐含内容会导致错误的行为。
+
+当一个对象被复制或赋值给另一个对象时，每个数据成员都会收到一个覆盖其现有值的值。默认复制构造函数和复制赋值运算符实现从源到目标的逐个成员复制。如果任何成员是指针，则源对象和目标对象将指向同一内存，因此分享。虽然分享可能是人们所期望的行为，但通常并非如此，而且会导致严重的问题。
+
+\mySamllsection{问题}
+
+在复制或赋值之前，源对象和目标对象中已经建立了类不变量。复制或赋值之后，源对象和目标对象应该与不变量保持一致。但是，如果需要深度复制语义，情况可能并非如此。
+
+有两种情况需要考虑：指针和独占资源。Mistake 54 解释了第一种情况，并推荐了确保不变量保持正确建立的技术。本讨论涵盖了独占资源的情况。
+
+考虑使用通信通道传输消息的情况。每个通道都连接到不同的端点，可能是付费信息的订阅者。开发人员意识到，由于指针用于消息，因此应注意确保动态资源不被共享。现有消息得到正确处理，但需要解决唯一资源的使用问题。
+
+唯一资源通常用作一组有限实体的值。例如，一个办公室可能有三台共享打印机。每台打印机都是唯一资源，因为只有三个实例存在，每次只能由一个用户使用。非动态分配的资源可能看起来只是“ 另一个”值。默认情况下，这些值会毫无保留地复制；但是，必须谨慎管理唯一资源。当唯一资源从一个实例复制到另一个实例时，它不能再存在或被源使用——资源被转移到目标。
+
+举一个不同的例子，假设开发人员想要将现有消息从一个通道（假设在端点上出现某种错误情况）传输到另一个通道并更改连接的端点。这本质上是一个移动操作；因此，他们实现了复制赋值运算符并谨慎管理动态消息。但是，当通道尝试处理 Messages 时，它会因端点错误而失败，如以下清单所示。
+
+\filename{清单8.11 注意动态资源，而不是惟一资源}
+
+\begin{cpp}
+int createSocket() {
+  // assume valid implementation; this is for an example only!
+  static int sock_num = 0;
+  return ++sock_num;
+}
+
+class Message {
+  private:
+  std::string payload;
+  public:
+  Message(const std::string& msg) : payload(msg) {}
+  const std::string& getMessage() const { return payload; }
+};
+class Channel {
+private:
+  std::queue<Message*> messages;
+  int socket;
+public:
+  Channel(int sock) : socket(sock) {}
+  void setMessage(std::string msg) { messages.push(new Message(msg)); }
+  int getSocket() const { return socket; }
+  std::string getMessage() {
+    std::string msg = messages.front()->getMessage();
+    messages.pop();
+    return msg;
+  }
+  Channel& operator=(Channel& o) {
+    for (int i = 0; i < messages.size(); ++i)
+      messages.pop();
+    for (int i = 0; i < o.messages.size(); ++i) {
+      messages.push(o.messages.front());
+      o.messages.pop();
+    }
+    socket = o.socket; // 1
+    return *this;
+  }
+};
+
+int main() {
+  Channel one(createSocket());
+  Channel two(createSocket());
+  two = one;
+  std::cout << one.getSocket() << ' ' << two.getSocket() << '\n';
+}
+\end{cpp}
+
+{\footnotesize
+注释1：现在，套接字在源和目标之间共享
+}
+
+\mySamllsection{分析}
+
+源队列中的指针使用元素的消息值来构造新的 Message 实例（设计不 佳；这只是一个示例）。直接传输指针会导致问题，因为对 pop 的调用会从源队列中删除元素并调用该元素的析构函数 — 指针将引用已删除的内存。套接字资源按原样复制，留下两个对象共享（都不拥有）该资源。由于套接字不是指针，因此很容易忽略这一事实并认为直接复制就足够了。
+
+复制操作将套接字值从源复制到目标，但源对象不得保留资源的副本。源对象意外使用资源可能会导致系统出现未定义、不正确或意外的行为；但是，假定套接字代表失败的端点。在这种情况下，复制可能会使目标留下一个无法操作的套接字，从而使分配本应解决的问题长期存在。
+
+独占资源需要了解其复制行为。资源是独占的这一事实意味着一次只能有一个对象拥有它。将资源从一个对象转移到另一个对象意味着源必须失去对该资源的任何引用。在这种情况下，可能必须重新创建唯一资源。一定要了解正在使用哪种方法并适当地解决它。
+
+\mySamllsection{解决}
+
+最直接的方法是确保将独占资源变量设置为无效值或默认值，具体取决于数据成员的类不变量。指针应被清零（具体方法取决于您的C++ 版本），值类型变量应具有明确且可检测的零值，这意味着没有分配资源。变化很小，但影响很大。
+
+\filename{清单8.12 传输动态和唯一的资源}
+
+\begin{cpp}
+int createSocket() {
+  // assume valid implementation; this is for an example only!
+  static int sock_num = 0;
+  return ++sock_num;
+}
+
+class Message {
+private:
+  std::string payload;
+public:
+  Message(const std::string& msg) : payload(msg) {}
+  const std::string& getMessage() const { return payload; }
+};
+
+class Channel {
+private:
+  std::queue<Message*> messages;
+  int socket;
+public:
+  Channel(int sock) : socket(sock) {}
+  void setMessage(std::string msg) { messages.push(new Message(msg)); }
+  int getSocket() const { return socket; }
+  std::string getMessage() {
+    std::string msg = messages.front()->getMessage();
+    messages.pop();
+    return msg;
+  }
+  Channel& operator=(Channel& o) {
+    for (int i = 0; i < o.messages.size(); ++i) {
+      messages.push(new Message(o.messages.front()->getMessage()));
+    o.messages.pop();
+    }
+    socket = createSocket(); // 1
+    o.socket = 0; // 2
+    return *this;
+  }
+};
+int main() {
+  Channel one(createSocket());
+  Channel two(createSocket());
+  two = one;
+  std::cout << one.getSocket() << ' ' << two.getSocket() << '\n';
+}
+\end{cpp}
+
+{\footnotesize
+注释1：端点的唯一版本
+
+注释2：源端点无效，无法共享，如果无效则清除
+}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+确保动态资源得到适当处理，并且不会在实例之间共享。
+
+\item
+确保唯一资源从源移动到目标，并将源设置为其零值。NULL 是一种常见的 C 习惯用法，但其定义和资源类型之间可能会出现大小不匹配的情况。现代 C++ 有 nullptr 关键字，用于将指针分配给空值。
+
+\item
+确保分配给值数据成员的零值不会使类不变量无效；如果零是合法值，请选择另一个值来表示无效值。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

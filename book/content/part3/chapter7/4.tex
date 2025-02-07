@@ -1,0 +1,172 @@
+内置的 C++ 数据类型（例如 int 和 double）直观、语法简单且性能卓越。当开发人员设计类时，这些特性应被视为必不可少。类设计就是类型设计；必须考虑构成正确且有用类型的所有因素。很少有其他语言能够提供 C++ 为类设计者提供的灵活性，但必须考虑几个潜在的陷阱。这些陷阱包括内存分配和释放；对象实例化、初始化和销毁； 重载和友元函数；尤其是类不变量。
+
+类型决定了类的实例所执行的一组操作。经常会出现对子类型的需要，因此必须仔细考虑继承的正确使用。如果类或类型是基类，则必须定义一个对所有子类型都有意义的接口。必须小心确保子类型不会破坏类的不变性。
+
+正确且有意义的类型设计为读者和开发人员提供了一种易于使用且定义清晰的感觉。正确性对于类设计至关重要，但必须高度重视实例使用结果的可读性。良好的设计还可以有效地使用类型，这样程序员就不必弥补缺失或尴尬的功能。最后，良好的类型设计会考虑实例在以下情况下的使用方式：集合或大型集合；这会影响性能。一如既往，请仔细考虑运行时间和空间成本，以尽量减少与算法选择不当相关的问题。
+
+类的四个主要特征影响其设计、编码和使用方式。必须仔细考虑以确保所有相关人员都能有效使用该类。有效使用通常归结为类提供的一组操作。设计这组操作时，应尽可能让程序员直观地使用它。
+
+\mySamllsection{问题}
+
+清单 7.3 是一个人为的例子，展示了将一个考虑不周的数据类型实现为类时出现的几个问题。程序员认为，通过开发一个简单的Rational 类，有理数的概念就可以轻松抽象和使用。乍一看，代码看起来很合理，但它包含几个伪装成好代码的错误。该类旨在允许对Rational 实例进行加法、乘法和打印。然而，使用此类会产生尴尬的代码。
+
+其理念是使用有理数进行计算，然后输出结果。使用此代码的客户很快就会发现，没有提供常规的预期操作（例如，使用 plus 方法而不 是 + 运算符），并且使用起来变得混乱且不清楚。这种难以理解的方法还会浪费开发人员的时间，使得这种尝试既幼稚又耗费认知。
+
+\filename{清单7.3 Rational类的naïve实现}
+
+\begin{cpp}
+class Rational {
+private:
+  double num;
+  double den;
+public:
+  Rational() : num(0), den(1) {}
+  Rational(double n, double d) : num(n), den(d) { reduce(); }
+  void setNumerator(double n) { num = n; }
+  void setDenominator(double d) { den = d; }
+  double getNumerator() { return num; }
+  double getDenominator() { return den; }
+  static int gcd(int a, int b) { return a == 0 ? b : gcd(b % a, a); }
+  void reduce() {
+    int div = gcd(num, den);
+    num = (den > 0 ? 1 : -1) * num / div;
+    den = abs(den) / div;
+  }
+  Rational plus(const Rational& o) const { // 1
+    int n = num * o.den + den * o.num;
+    int d = den * o.den;
+    return Rational(n, d);
+  }
+  Rational times(const Rational& o) const { // 2
+    int n = num * o.num;
+    int d = den * o.den;
+    return Rational(n, d);
+  }
+  void print() { std::cout << num << '/' << den; } // 3
+};
+int main() {
+  Rational r1(1, 3);
+  Rational r2(2, 4);
+  Rational r3 = r1.plus(r2);
+  r3.print();
+  std::cout << '\n';
+  Rational(1, 0);
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：命名不当的加法运算符
+
+注释2：命名不当的乘法运算符
+
+注释3：命名不当的输出运算符
+}
+
+\mySamllsection{分析}
+
+这一类 Rational 最突出的特点是误解了有理数的本质。从本质上讲，有理数由比率组成（因此得名 ratio-nal，它并不像我最初认为的那样指的是“合理”的数字）。数论断言分子和分母是整数，而不是双精度数。遵循合理的数学推理至关重要。接下来，考虑主函数中返回之前的最后一行代码。这是一种未定义的情况，因为分母是一个除以零的问题。
+
+必须提出一个重要问题：有理数会改变吗？我更喜欢不可变数据；这是该原则的一个典型例子。可变版本必须使用不同的考虑因素。数字永远不会改变；因此，有理数一旦构造，就不应该改变其值（但这取决于要解决的问题）。尽可能在所有地方删除变量。考虑独立于分母获取分子是否有意义——在这种情况下，可能没有意义。删除访问器 。
+
+确定客户端是否应该能够调用 gcd 或 reduce。这些函数是作为Rational 类的辅助函数提供的；它们不应成为公共接口的一部分 — 将它们标记为 private。最后，确定这些函数是否应该内联；通常，递归函数不会内联，但实际结果取决于编译器。通过在类内部定义它们，它们将被隐式内联。这种方法将按照编译器认为最合适的方式实现。可以提出一个论点，让 gcd 保持隐式内联，因为它很简单并且在类中实现；编译器将确定其实际情况。但是，reduce 不太可能通过内联来节省任何重大开销。
+
+仔细考虑一下 plus 和 times 函数的含义。设计者希望它们是加法和乘法，但这一点需要清楚地传达。此外，不清楚这些函数是否会改变调用对象（在 plus 的情况下是 r1），或者它们是否会创建一个用计算结果初始化的新对象。源代码解决了这个问题，但让用户阅读源代码会严重影响可读性。
+
+该 print 函数意图良好，但需要更直观。人们可能认为 std::cout 是使用 Rational 实例输出的自然（因此也是唯一）流；这是一个幼稚而尴尬的决定。好的设计在形式上是通用的，但这种设计是具体和不灵活的。这三个设计不良的函数严重影响了效率，因为它们不直观，也不遵循任何其他已知的使用模式。
+
+\mySamllsection{解决}
+
+此代码是重新设计的版本，它考虑了有理数的含义并在代码中实现了 这种理解。plus 和 times 方法已重新实现，以使用标准算术 + 和 * 运算符。客户端使用它来编写直观地使用预期计算符号的代码。print 方法已更改为为 ostream 类重载 operator<{}<。这种方法允许开发人员使用标准插入运算符将数据添加到输出流 - 就像所有内置数据类型一样。这种一致性使使用代码变得自然而有效。
+
+\filename{清单7.4 提供直观使用的实现}
+
+\begin{cpp}
+class Rational {
+  private:
+  int num;
+  int den;
+  static int gcd(int a, int b) { return a == 0 ? b : gcd(b % a, a); }
+  void reduce();
+  int validate(int v) {
+    return v != 0 ? v : throw
+      std::invalid_argument("zero denominator");
+  }
+public:
+  Rational(int n, int d=1) : num(n), den(validate(d)) { reduce(); }
+  Rational operator+(const Rational& o) const;
+  Rational operator*(const Rational& o) const;
+  friend std::ostream& operator<<(std::ostream&, const Rational&);
+};
+void Rational::reduce() {
+  int div = gcd(num, den);
+  num = (den > 0 ? 1 : -1) * num / div;
+  den = abs(den) / div;
+}
+Rational Rational::operator+(const Rational& o) const { // 1
+  return Rational(num * o.den + den * o.num, den * o.den);
+}
+Rational Rational::operator*(const Rational& o) const { // 2
+  return Rational(num * o.num, den * o.den);
+}
+std::ostream& operator<<(std::ostream& out, const Rational& r) { // 3
+  out << r.num << '/' << r.den;
+  return out;
+}
+
+int main() {
+  Rational r1(1, 3);
+  Rational r2(2, 4);
+  std::cout << r1 + r2 << '\n';
+  //Rational(1, 0);
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：自然加法运算符
+
+注释2：自然乘法运算符
+
+注释3：自然插入运算符
+}
+
+通过将实例变量设为整数，可以体现有理数的含义。辅助函数被巧妙地隐藏起来，仅供类使用。除以零的运算得到适当处理。运算符直观易懂，用户知道加法和乘法不会影响调用（或左侧）对象。插入运算符的工作方式与其他运算符一样，因此用户可以像使用其他运算符一样使用它 — 显著提高了可读性和有效性。
+
+在考虑内联与外联函数定义时，有几个问题需要考虑。以下是一些需要考虑的问题：
+
+\begin{itemize}
+\item
+内联函数可以通过将函数代码直接嵌入到调用点来减少函数调用开销，这可能会提高频繁调用的小函数的性能。但是，过度内联会增加代码大小并降低缓存性能。外联函数通常具有函数调用的开销，但不会增加调用点的代码大小，这有助于保持更好的指令缓存局部性。
+
+\item
+如果过度使用内联函数或将其用于大型函数，则会导致代码膨胀，因为代码会插入到每个调用点。外联函数有助于保持可执行文件的大小较小，因为函数代码是重复使用的，而不 是重复的。
+
+\item
+内联函数会使调试更加困难，因为函数代码在多个位置重复，使堆栈跟踪和调试工作变得复杂。外联函数将实现集中起来，使其更易于维护和调试。
+
+\item
+内联函数通常在头文件中定义，如果内联函数发生更改，则会增加重新编译多个翻译单元的风险。外联函数通常在源文件中定义，这有助于最大限度地减少重新编译，因为对这些函数的更改不会影响头文件和依赖于头文件的文件。
+
+\item
+内联函数通常在头文件中定义；因此，实现细节会暴露，这对于封装来说可能不是理想的。外联函数可以隐藏源文件中的实现细节，从而改善封装以及接口和实现的分离。
+
+\item
+内联函数最适合简单函数，以内联方式定义它们可以通过将相关代码放在一起来提高可读性。外联函数最适合复杂函数，分离实现有助于保持类定义清晰易读。
+\end{itemize}
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+请记住，实现类设计就是设计一种新的数据类型。对于任何对其含义有基本了解的人来说，使用类型应该是直观的。
+
+\item
+当基于符号的运算符能够在数据类型上下文中准确传达操作的含义时，请定义它们。切勿仅仅因为它们“看起来很酷”而使用它们。
+
+\item
+保持数据流和代码设计的通用性；尽可能不要将用户锁定在一条特定的路径上。最好的方法是设计一种数据类型，使其接近内置类型的自然操作。
+
+\item
+明智地使用内联，仔细考虑内联和外联方法之间的权衡。
+\end{itemize}

@@ -1,0 +1,99 @@
+这个问题主要集中在正确性上，其次是有效性。内存分配自 C 语言以来已经取得了长足的进步，但这并不意味着每个人都能接受这些变化。
+
+\mySamllsection{问题}
+
+C 提供 malloc 和 free 内存分配和释放运算符对。与使用 new 和delete 的 C++ 动态资源分配一样，使用 malloc 获得的任何内容都应使用 free 释放。这听起来很简单，而且在很多情况下确实如此。但是，C 和 C++ 代码可能会使这个“简单”的过程变得复杂，尤其是当资源所有权随着对象在函数之间传递而发生变化时。
+
+清单 6.5 展示了 malloc 代码中出现的两个常见问题：
+
+\begin{itemize}
+\item
+大小计算不正确
+
+\item
+无法初始化获取的内存
+\end{itemize}
+
+\filename{清单6.5 不规范地使用malloc和free}
+
+\begin{cpp}
+struct Buffer {
+  char* str;
+  Buffer(int size) : str(new char[size+1]) { str[0] = '\0'; }
+  ~Buffer() { free(str); }
+};
+
+int main() {
+  double* val = (double*)malloc(sizeof(int)); // 1
+  std::cout << val << '\n';
+  Buffer* buf = (Buffer*)malloc(sizeof(Buffer)); // 2
+  std::cout << buf->str << ", size " << strlen(buf->str) << '\n';
+  free(buf);
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：睡眼惺忪的错别字
+
+注释2：动态对象空间已分配但尚未初始化
+}
+
+\mySamllsection{分析}
+
+除了前面提到的两个 malloc 问题之外，上述代码至少还有三个其他错误。首先，获取了一个动态内存块来保存 double 值。由于熬夜和咖啡因水平下降，开发人员错误地请求了足够的内存来存储整数（通常是 double 值的一半大小）。编译器对这种不匹配保持沉默，这是一个典型的类型安全错误。对存储在这个太短的块中的数据的任何访问都将访问其边界之外的数据。我讨厌早上未定义行为的味道。
+
+第二个问题出现在创建 Buffer 对象时。这次，分配的大小是正确的，但缺少 char* 变量的初始化。构造函数应该处理获取动态内存块以保存字符数据并确保将终止字符写入第一个位置。然而，这种情况从未发生过。调用 malloc 时，不会执行任何构造函数，也不会发生初始化。
+
+第三，val 变量没有相应的释放。内存的动态分配在主函数退出时泄漏；没有析构函数或其他管理实体在监视内存。在长期运行 的程序中，几次这样的泄漏可能会导致严重的问题。
+
+第四个问题是，虽然 buf 对象已正确释放，但该对象获取的动态内存并未释放。诚然，在这种情况下，它从未被分配，但更好的代码会分配它，只会在封闭实体被释放时泄漏它。free 调用从不调用析构函数，导致任何动态资源都处于困境之中。
+
+最后，在通过调用 new 分配构造函数中获得的 Buffer 对象的动态内存与通过调用 free 释放它的析构函数尝试之间存在不匹配。这种不 匹配的行为没有定义，让可怜的程序（和程序员！）任由编译器选择做什么。解决复制和赋值（和移动）语义的 Buffer 类的更强大的实现将缓解其中许多问题。
+
+\mySamllsection{解决}
+
+new 和 delete 运算符并非只是为了相反而开发的。malloc 和free 的不足之处足以证明需要一种新的方法。
+
+如清单 6.6 所示，第一个问题由 new 处理，以确保获得的任何实体都是接收变量的正确类型——不会出现类型安全错误。第二个问题通过确保每次分配时都调用构造函数来处理。正确设计的代码将实现 RAII 模式，以确保分配与正确的释放配对。第三，仍然有可能无法删除new 对象；开发人员必须确保它们的配对。如果设计正确（RAII 模式），则在调用析构函数时会解决第四个问题。第五，也是最后，当仅使用 new 和 delete 运算符时不会出现不匹配的情况。混合使用 new/ delete 与 malloc/free 不仅是不好的形式，而且还会产生严重后果：更多未定义的行为。
+
+\filename{清单6.6 以规范的方式使用new和free}
+
+\begin{cpp}
+struct Buffer {
+  char* str;
+  Buffer(int size) : str(new char[size+1]) { str[0] = '\0'; }
+  ~Buffer() { delete[] str; }
+};
+int main() {
+  // double* val = new int; // 1
+  double* val = new double; // 2
+  std::cout << val << '\n';
+  Buffer* buf = new Buffer(25); // 3
+  std::cout << buf->str << ", size " << strlen(buf->str) << '\n';
+  delete buf; // 4
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：不再可能
+
+注释2：类型安全得到保证
+
+注释3：构造函数被调用
+
+注释4：析构函数被调用；记得删除它！
+}
+
+Buffer 类可以删除或隐藏复制构造函数和复制赋值运算符，以使其实现更加健壮。这一点并未得到演示，但在使用动态资源时应始终考虑。另请参阅部分为读者提供了有关这些主题的更多讨论。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+将 malloc 调用替换为 new，将 free 调用替换为 delete。
+
+\item
+请记住，每个 new 都有对应的 delete，每个 new[] 都有匹配的delete[]。
+\end{itemize}

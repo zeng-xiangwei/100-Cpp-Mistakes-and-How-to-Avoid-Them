@@ -1,0 +1,187 @@
+此错误会影响正确性。问题在于，当从已分配动态资源的构造函数中抛出异常时，会导致资源泄漏，从而使系统处于受损状态。正确性不 仅仅是程序内的正确计算；它还必须考虑对整个系统的影响。
+
+动态资源是一种简单的方法来访问和使用各种资源，而这些资源作为值实体时效果不佳。一个简单的例子是长度未知的数组，其大小在运行时确定，并且数组是动态分配的。如果出现异常，处理这些资源会变得更加复杂。
+
+\mySamllsection{问题}
+
+假设开发人员正在构建一个需要页眉和页脚的 Page 实体。组成每个文本的文本位于硬盘文件中。系统资源是变体行为的来源。文本文件可能存在也可能不存在；访问它们的权限可能被授予也可能不被授予；并且可能会出现读取或写入错误、意外数据和其他一些问题。
+
+清单 10.5 中的代码展示了一种处理页眉和页脚文本的幼稚尝试。首先，应该优先使用 std::string，而不是 C 样式的字符串，但不是每个人都有这种特权。其次，预期的错误（例如读取文本文件时） 应该在本地处理，并且只有在没有很好的问题解决方案时才应抛出异常。虽然任何一组开发人员对这个问题都有不同的看法，但本章中的代码接受了开发人员的方法。第三，输入缓冲区的硬编码长度充满了潜在的问题。坏人喜欢这种错误，因为这样的安全漏洞会让他们有机会破坏原本安全的代码。
+
+\filename{清单10.5 尝试在析构函数中处理动态资源}
+
+\begin{cpp}
+class OneLiner {
+private:
+  std::string filename;
+  char* text;
+public:
+  OneLiner(const std::string& filename) : filename(filename), text(0) {
+    text = new char[64];
+    std::cout << filename << " allocated\n";
+    std::ifstream file(filename.c_str());
+    if (file.fail())
+      throw std::string("file " + filename + " inaccessible");
+    // read data into text
+  }
+  ~OneLiner() { std::cout << filename <<
+    " ~deallocated\n"; delete [] text; } // 1
+    char* getText() const { return text; }
+};
+class Page {
+private:
+  std::string title;
+  char* header;
+  char* footer;
+public:
+  Page(const std::string& title, const std::string& headerfile, const
+  std::string& footerfile) :
+  title(title), header(0), footer(0) {
+    try {
+      OneLiner head(headerfile); ❷
+      header = head.getText();
+      OneLiner foot(footerfile); ❸
+      footer = foot.getText();
+    } catch(const std::string& ex) {
+      std::cout << ex << '\n';
+    }
+  }
+};
+
+int main() {
+  Page chapter("Introduction to C++", "header.txt", "footer.txt");
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：调用时释放动态内存
+
+注释2：正确清理动态内存
+
+注释3：动态内存泄漏，而不是清理
+}
+
+在正常情况下，OneLiner 的析构函数代码可以正确处理动态访问资源的释放；然而，错误条件会彻底搞乱这一切。当异常导致 try 块终止时，head 对象将被销毁。foot 对象应该以相同的方式清理，但这里的表象是骗人的。以下输出显示了发生的情况；请注意，只有一个释放：
+
+\begin{shell}
+header.txt allocated
+footer.txt allocated
+header.txt ~deallocated
+file footer.txt inaccessible
+\end{shell}
+
+\mySamllsection{分析}
+
+当 head 对象创建后，动态内存被分配，文件对象被成功打开，读取操作可以继续。构造函数完成它，并且 head 对象被完全构造。
+
+创建 foot 对象时会分配动态内存，但打开文件对象时会失败。由于构造函数无法采取任何补救措施，因此失败会引发异常。它正确地确定它无法成功，因此会抛出异常。构造函数执行不完整，这就是问题的开始。
+
+当 main 函数运行 try 块时，它会成功创建 head 对象。当尝试创建foot 对象时，它会引发异常。try 块会立即结束，并执行 catch 块。但是，在执行 catch 块之前，必须展开堆栈以清理在其范围内创建的任何资源。head 对象被销毁，释放动态内存。脚 object 从未完全构造；因此，它不会被清理。在部分构造的对象上调用析构函数会带来很多麻烦，因为不清楚如何正确销毁部分对象。因此，析构函数不 会清理此对象。foot 对象泄漏了动态分配的内存。
+
+\mySamllsection{解决}
+
+解决方案很简单：在从构造函数中抛出异常之前，手动释放所有分配的动态资源 — 简单！读起来很简单，但这种方法可能会引入重复的清理代码、奇怪或复杂的清理逻辑，并且可能会丢失一些资源，具体取决于构造的复杂性。以下代码在抛出异常之前释放动态内存，从而防止泄漏。
+
+\filename{清单10.6 在抛出之前清理动态资源}
+
+\begin{cpp}
+class OneLiner {
+private:
+  std::string filename;
+  char* text;
+public:
+  OneLiner(const std::string& filename) : filename(filename), text(0) {
+    text = new char[64];
+    std::cout << filename << " allocated\n";
+    std::ifstream file(filename.c_str());
+    if (file.fail()) {
+      std::cout << filename << " deallocated dynamic memory\n";
+      delete [] text; // 1
+      throw std::string("file " + filename + " inaccessible");
+    }
+    // read data into text
+  }
+  ~OneLiner() {
+    std::cout << filename << " ~deallocated\n";
+    delete [] text;
+  }
+  char* getText() const { return text; }
+};
+class Page {
+private:
+  std::string title;
+  char* header;
+  char* footer;
+public:
+  Page(const std::string& title, const std::string& headerfile, const
+  std::string& footerfile) :
+      title(title), header(0), footer(0) {
+    try {
+      OneLiner head(headerfile); // 2
+      header = head.getText();
+      OneLiner foot(footerfile); // 3
+      footer = foot.getText();
+    } catch(const std::string& ex) {
+      std::cout << ex << '\n';
+    }
+  }
+};
+int main() {
+  Page chapter("Introduction to C++", "header.txt", "footer.txt");
+  return 0;
+}
+\end{cpp}
+
+{\footnotesize
+注释1：抛出之前删除动态资源
+
+注释2：正常的析构函数调用来释放内存
+
+注释3：该错误导致基于构造函数的内存释放
+}
+
+以下输出显示了基于构造函数的释放的结果。结果与预期一致：
+
+\begin{shell}
+header.txt allocated
+footer.txt allocated
+footer.txt deallocated dynamic memory
+header.txt ~deallocated
+file footer.txt inaccessible
+\end{shell}
+
+虽然这种方法很可爱，但只有在无法做更简单、更优雅的事情时才使用这种方法。下一个错误推荐了 C++ 的发明者开发的一种模式； 如果 Bjarne 说要使用它，我们就用它吧！
+
+潜在的困难在于 OneLiner 类具有多项职责；它分配内存并打开和读取文件。如果有一种方法可以通过将分配和释放的琐事推给另一个类来最小化其职责，生活可能会更简单。RAII 模式就是这样做的。因此，更喜欢 RAII 而不是这个在可以的时候使用技术；在必须的时候修改构造函数。
+
+现代 C++ 提供了智能指针来更简洁地解决这个问题。std::unique\_ptr 和 std::shared\_ptr 实现了 RAII 模式，免去了 您做繁重工作的需要。
+
+\mySamllsection{建议}
+
+\begin{itemize}
+\item
+确保在通过异常离开构造函数之前正确删除所有分配的动态资源。
+
+\item
+确保析构函数处理所有动态资源。
+
+\item
+请记住，只有完全构造的对象才会调用其析构函数。
+
+\item
+尽量使用 RAII。
+\end{itemize}
+
+
+
+
+
+
+
+
+
+
+
+
+
